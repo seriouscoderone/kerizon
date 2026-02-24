@@ -90,6 +90,24 @@ Or Claude will auto-invoke the skill when you describe a KERI ecosystem and ask 
 | Duplicity handling & suspension | Panel 4 |
 | Selective disclosure field gating | All panels |
 
+## Dependency
+
+This plugin requires a **KERI ecosystem specification** as input. The canonical
+format — roles with `keri_infrastructure` flags, credentials with `schema_fields`
+tables, delegation trees with `depth_limit`, and a governance trust framework — is
+defined by the **[keri-claude](https://github.com/seriouscoderone/keri-claude)**
+marketplace plugin (`design0-ecosystem` skill).
+
+Install both plugins to go from ecosystem design to UI spec in one session:
+
+```
+/plugin install seriouscoderone/keri-claude   # ecosystem design → spec output
+/plugin install seriouscoderone/kerizon       # spec input → four-panel UI design
+```
+
+The output of `keri-claude`'s `design0-ecosystem` skill is the direct input to
+this skill's Step 1 extraction tables.
+
 ## License
 
 Apache-2.0
