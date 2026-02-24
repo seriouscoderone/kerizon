@@ -1,0 +1,13 @@
+{
+  "name": "kerizon-ui",
+  "version": "0.1.0",
+  "description": "KERI Ecosystem Human-Agent Collaboration UI skill — derive a four-panel KERI-native UI/UX design from any KERI ecosystem specification.",
+  "author": {
+    "name": "kerizon-ui contributors"
+  },
+  "homepage": "https://github.com/seriouscoderone/kerizon",
+  "repository": "https://github.com/seriouscoderone/kerizon",
+  "license": "Apache-2.0",
+  "keywords": ["keri", "acdc", "credentials", "human-agent", "ui", "did", "decentralized-identity"],
+  "skills": "./skills/"
+}
