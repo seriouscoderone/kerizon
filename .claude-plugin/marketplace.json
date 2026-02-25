@@ -1,0 +1,21 @@
+{
+  "name": "kerizon",
+  "owner": {
+    "name": "seriouscoderone"
+  },
+  "metadata": {
+    "description": "KERI ecosystem UI/UX skills for Claude Code"
+  },
+  "plugins": [
+    {
+      "name": "kerizon-ui",
+      "source": "./",
+      "description": "KERI Ecosystem Human-Agent Collaboration UI skill — derive a four-panel KERI-native UI/UX design from any KERI ecosystem specification.",
+      "version": "0.1.0",
+      "homepage": "https://github.com/seriouscoderone/kerizon",
+      "repository": "https://github.com/seriouscoderone/kerizon",
+      "license": "Apache-2.0",
+      "keywords": ["keri", "acdc", "credentials", "human-agent", "ui", "did", "decentralized-identity"]
+    }
+  ]
+}

@@ -15,51 +15,30 @@ The skill is domain-agnostic — it works for insurance, supply chain, healthcar
 
 ## Installation
 
-### Option 1 — Claude CLI (`--plugin-dir` flag)
+### Option 1 — From GitHub (recommended)
 
-Use this to load the plugin for a single session without installing it globally.
+Add the marketplace and install the plugin in two steps:
+
+```
+/plugin marketplace add seriouscoderone/kerizon
+/plugin install kerizon-ui@kerizon
+```
+
+The plugin persists across sessions. Verify with `/plugin` → **Installed** tab.
+
+---
+
+### Option 2 — From a local clone
 
 ```bash
 # Clone the repo
 git clone https://github.com/seriouscoderone/kerizon
-
-# Launch Claude with the plugin loaded
-claude --plugin-dir ./kerizon
 ```
 
-The plugin is active for that session only. To make it permanent, add it via
-`/plugin` instead (see Option 2).
-
-You can verify it loaded by running `/plugins` — `kerizon-ui` should appear in
-the list.
-
----
-
-### Option 2 — Inside Claude Code (`/plugin` command)
-
-If you are already running a Claude Code session, install the plugin without
-leaving the session.
-
-**From a local clone:**
+Then from within Claude Code:
 
 ```
-/plugin install /path/to/kerizon
-```
-
-**From the marketplace (once published):**
-
-```
-/plugin install seriouscoderone/kerizon
-```
-
-After installation, the plugin persists across sessions. Verify with `/plugins`.
-
----
-
-### Option 3 — Marketplace (once published)
-
-```bash
-/plugin marketplace add seriouscoderone/kerizon
+/plugin marketplace add ./kerizon
 /plugin install kerizon-ui@kerizon
 ```
 
@@ -101,8 +80,11 @@ marketplace plugin (`design0-ecosystem` skill).
 Install both plugins to go from ecosystem design to UI spec in one session:
 
 ```
-/plugin install seriouscoderone/keri-claude   # ecosystem design → spec output
-/plugin install seriouscoderone/kerizon       # spec input → four-panel UI design
+/plugin marketplace add seriouscoderone/keri-claude
+/plugin install design0-ecosystem@keri-claude   # ecosystem design → spec output
+
+/plugin marketplace add seriouscoderone/kerizon
+/plugin install kerizon-ui@kerizon              # spec input → four-panel UI design
 ```
 
 The output of `keri-claude`'s `design0-ecosystem` skill is the direct input to
