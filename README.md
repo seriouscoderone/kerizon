@@ -90,13 +90,15 @@ Install both plugins to go from ecosystem design to UI spec in one session:
 The output of `keri-claude`'s `design0-ecosystem` skill is the direct input to
 this skill's Step 1 extraction tables.
 
-## Complementary skills
+## Next step: webapp-blueprint
 
-### kerizon-ui + webapp-blueprint
+After running `kerizon-ui`, use **[webapp-blueprint](https://github.com/seriouscoderone/webapp-blueprint)** to produce the full engineering spec for your application — domain model, roles, APIs, auth, BDD features, state management, and seed data. `kerizon-ui` gives you the UI paradigm; `webapp-blueprint` turns that into a buildable app.
+
+### How they divide the work
 
 `kerizon-ui` is a domain-specific UI skill, not a general design system. It produces one canonical design from a KERI ecosystem spec — the fixed four-panel HAC layout driven entirely by KERI primitives (KELs, TELs, ACDCs, delegation trees, witness pools). It covers **Steps 2–9** of a typical web app blueprint: UI paradigm, layout, and panel-level interaction patterns.
 
-A general webapp-blueprint skill covers complementary ground:
+[webapp-blueprint](https://github.com/seriouscoderone/webapp-blueprint) covers complementary ground:
 
 | Concern | kerizon-ui | webapp-blueprint |
 |---------|-----------|-----------------|
@@ -107,7 +109,7 @@ A general webapp-blueprint skill covers complementary ground:
 | Domain / roles / APIs / auth | No | Yes (Steps 1–2, 5–9, 13–15) |
 | BDD / seed data | No | Yes (Steps 9, 18) |
 
-The two skills complement each other cleanly for a KERI app. The recommended workflow:
+### Recommended workflow
 
 1. **Run `/kerizon-ui` first** — produces the four-panel design from your KERI ecosystem spec
 2. **Run `/webapp-blueprint`** — use it for Steps 1–9 (domain, roles, BDD) and Steps 13–18 (state, APIs, auth, seed data)
@@ -115,7 +117,7 @@ The two skills complement each other cleanly for a KERI app. The recommended wor
 
 There is no built-in handoff between the two skills, so you coordinate manually: tell Claude explicitly "use kerizon-ui's four-panel output as the answer to Steps 10–12 in webapp-blueprint."
 
-> **Note:** This pattern generalizes. Any domain-specific UI/UX skill (not just `kerizon-ui`) that produces a fixed layout from a domain spec would interact with webapp-blueprint the same way — it answers the IA/pages/components steps while webapp-blueprint handles structural engineering.
+> **Note:** This pattern generalizes. Any domain-specific UI/UX skill that produces a fixed layout from a domain spec would interact with webapp-blueprint the same way — it answers the IA/pages/components steps while webapp-blueprint handles structural engineering.
 
 `kerizon-ui`'s four-panel design is only appropriate for KERI-native applications. If your app is not KERI-native, `kerizon-ui` output will not apply.
 
