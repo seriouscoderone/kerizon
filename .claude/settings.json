@@ -3,5 +3,8 @@
     "keri-claude": {
       "source": { "source": "github", "repo": "seriouscoderone/keri-claude" }
     }
+  },
+  "enabledPlugins": {
+    "keri@keri-skills": true
   }
 }
