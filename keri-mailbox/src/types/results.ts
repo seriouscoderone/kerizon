@@ -5,6 +5,8 @@ import type { TopicAddress } from "./TopicAddress.js";
 export interface StoreResult {
   ordinal: bigint;
   digest: string;
+  /** True if this payload was not previously present in the message store. */
+  isNew: boolean;
 }
 
 /** One message event delivered during egress polling. */
@@ -32,8 +34,11 @@ export interface SubmitResult {
 
 /** Parameters for polling messages via MailboxEgress. */
 export interface PollParams {
+  /** The AID performing the poll (may differ from recipient for proxy auth). */
+  poller: AID;
+  /** The recipient AID whose mailbox to read. */
   recipient: AID;
-  /** Map of topic name → last-seen ordinal (exclusive lower bound, use 0n for all). */
+  /** Map of topic name → starting ordinal (inclusive lower bound, use 0n for all). */
   cursors: Map<string, bigint>;
   /** Challenge nonce for egress authentication (from generateNonce()). */
   challenge?: string;
@@ -43,5 +48,6 @@ export interface PollParams {
 
 /** Result of processing a /end/role/add or /end/role/cut reply. */
 export type ProvisionResult =
-  | { ok: true; aid: AID }
+  | { ok: true; action: "provisioned"; aid: AID }
+  | { ok: true; action: "deprovisioned"; aid: AID }
   | { ok: false; reason: string };

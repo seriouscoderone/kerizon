@@ -4,33 +4,50 @@ import type { StoreResult, EgressEvent } from "../types/results.js";
 import type { IMailboxStore } from "../interfaces/IMailboxStore.js";
 import { topicKey } from "../types/TopicAddress.js";
 
-interface StoredMessage {
-  payload: Uint8Array;
+interface TopicEntry {
+  digest: string;
   storedAt: number;
 }
 
 /**
  * In-memory reference implementation of IMailboxStore.
  *
- * Uses plain Map/Set structures. Not thread-safe. Not persistent.
+ * Uses a two-level content-addressed structure per the spec:
+ *   - Topic Index: (TopicAddress, ordinal) → digest
+ *   - Message Store: digest → payload bytes
+ *
+ * Not thread-safe. Not persistent.
  * Intended for testing and prototyping — not for production use.
+ *
+ * Note: Uses SHA-256 for content hashing. The spec recommends Blake3-256;
+ * production implementations should use Blake3-256 via their own IMailboxStore.
  */
 export class MemoryMailboxStore implements IMailboxStore {
-  private readonly messages = new Map<string, Map<bigint, StoredMessage>>();
+  /** Topic Index: topicKey → Map<ordinal, TopicEntry> */
+  private readonly topics = new Map<string, Map<bigint, TopicEntry>>();
+  /** Message Store: digest → payload (content-addressed) */
+  private readonly blobs = new Map<string, Uint8Array>();
   private readonly counters = new Map<string, bigint>();
   private readonly provisioned = new Set<string>();
 
   async store(topic: TopicAddress, payload: Uint8Array): Promise<StoreResult> {
     const key = topicKey(topic);
-    if (!this.messages.has(key)) {
-      this.messages.set(key, new Map());
+    if (!this.topics.has(key)) {
+      this.topics.set(key, new Map());
       this.counters.set(key, 0n);
     }
+
+    const digest = await sha256Hex(payload);
+    const isNew = !this.blobs.has(digest);
+    if (isNew) {
+      this.blobs.set(digest, payload);
+    }
+
     const ordinal = this.counters.get(key)!;
     this.counters.set(key, ordinal + 1n);
-    this.messages.get(key)!.set(ordinal, { payload, storedAt: Date.now() });
-    const digest = await sha256Hex(payload);
-    return { ordinal, digest };
+    this.topics.get(key)!.set(ordinal, { digest, storedAt: Date.now() });
+
+    return { ordinal, digest, isNew };
   }
 
   async *retrieve(
@@ -38,14 +55,16 @@ export class MemoryMailboxStore implements IMailboxStore {
     fromOrdinal: bigint,
   ): AsyncIterable<[bigint, Uint8Array]> {
     const key = topicKey(topic);
-    const topicMessages = this.messages.get(key);
-    if (!topicMessages) return;
-    const ordinals = [...topicMessages.keys()].sort((a, b) =>
+    const entries = this.topics.get(key);
+    if (!entries) return;
+    const ordinals = [...entries.keys()].sort((a, b) =>
       a < b ? -1 : a > b ? 1 : 0,
     );
     for (const ordinal of ordinals) {
       if (ordinal >= fromOrdinal) {
-        yield [ordinal, topicMessages.get(ordinal)!.payload];
+        const entry = entries.get(ordinal)!;
+        const payload = this.blobs.get(entry.digest);
+        if (payload) yield [ordinal, payload];
       }
     }
   }
@@ -83,12 +102,12 @@ export class MemoryMailboxStore implements IMailboxStore {
 
   async trim(topic: TopicAddress, beforeOrdinal: bigint): Promise<bigint> {
     const key = topicKey(topic);
-    const topicMessages = this.messages.get(key);
-    if (!topicMessages) return 0n;
+    const entries = this.topics.get(key);
+    if (!entries) return 0n;
     let deleted = 0n;
-    for (const ordinal of [...topicMessages.keys()]) {
+    for (const ordinal of [...entries.keys()]) {
       if (ordinal < beforeOrdinal) {
-        topicMessages.delete(ordinal);
+        entries.delete(ordinal);
         deleted++;
       }
     }
@@ -99,11 +118,11 @@ export class MemoryMailboxStore implements IMailboxStore {
     const cutoff = Date.now() - maxAge;
     let deleted = 0n;
     const prefix = `${recipient}/`;
-    for (const [key, topicMessages] of this.messages) {
+    for (const [key, entries] of this.topics) {
       if (!key.startsWith(prefix)) continue;
-      for (const [ordinal, msg] of [...topicMessages.entries()]) {
-        if (msg.storedAt <= cutoff) {
-          topicMessages.delete(ordinal);
+      for (const [ordinal, entry] of [...entries.entries()]) {
+        if (entry.storedAt <= cutoff) {
+          entries.delete(ordinal);
           deleted++;
         }
       }

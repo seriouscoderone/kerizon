@@ -5,7 +5,7 @@ import type { TopicAddress } from "../../src/types/TopicAddress.js";
 
 const alice = dummyAID("Alice");
 const bob = dummyAID("Bob");
-const topic: TopicAddress = { recipient: alice, topic: "notice" };
+const topic: TopicAddress = { recipient: alice, topic: "/notice" };
 
 describe("MemoryMailboxStore", () => {
   let store: MemoryMailboxStore;
@@ -53,6 +53,22 @@ describe("MemoryMailboxStore", () => {
       expect(result.digest).toMatch(/^[0-9a-f]{64}$/);
     });
 
+    it("returns isNew=true for first occurrence", async () => {
+      const result = await store.store(topic, new Uint8Array([1, 2, 3]));
+      expect(result.isNew).toBe(true);
+    });
+
+    it("returns isNew=false for duplicate payload", async () => {
+      const payload = new Uint8Array([1, 2, 3]);
+      const r1 = await store.store(topic, payload);
+      const r2 = await store.store(topic, payload);
+      expect(r1.isNew).toBe(true);
+      expect(r2.isNew).toBe(false);
+      expect(r1.digest).toBe(r2.digest);
+      // ordinal still increments even for duplicate content
+      expect(r2.ordinal).toBe(r1.ordinal + 1n);
+    });
+
     it("retrieves messages from ordinal 0", async () => {
       const p1 = new Uint8Array([1]);
       const p2 = new Uint8Array([2]);
@@ -84,7 +100,7 @@ describe("MemoryMailboxStore", () => {
     it("returns nothing for unknown topic", async () => {
       const results: Array<[bigint, Uint8Array]> = [];
       for await (const entry of store.retrieve(
-        { recipient: alice, topic: "unknown" },
+        { recipient: alice, topic: "/unknown" },
         0n,
       )) {
         results.push(entry);
@@ -95,8 +111,8 @@ describe("MemoryMailboxStore", () => {
 
   describe("retrieveMulti", () => {
     it("yields events across multiple topics", async () => {
-      const t1: TopicAddress = { recipient: alice, topic: "a" };
-      const t2: TopicAddress = { recipient: alice, topic: "b" };
+      const t1: TopicAddress = { recipient: alice, topic: "/a" };
+      const t2: TopicAddress = { recipient: alice, topic: "/b" };
       await store.store(t1, new Uint8Array([1]));
       await store.store(t2, new Uint8Array([2]));
 
@@ -104,8 +120,8 @@ describe("MemoryMailboxStore", () => {
       for await (const ev of store.retrieveMulti(
         alice,
         new Map([
-          ["a", 0n],
-          ["b", 0n],
+          ["/a", 0n],
+          ["/b", 0n],
         ]),
       )) {
         events.push(ev);

@@ -19,7 +19,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "cesr-ts": "^0.3.1"
+    "cesr-ts": "file:../../keri-ts/packages/cesr/npm"
   },
   "devDependencies": {
     "tsup": "^8.0.0",

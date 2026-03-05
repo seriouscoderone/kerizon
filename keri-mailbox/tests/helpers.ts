@@ -1,16 +1,7 @@
+import { encodeB64, intToB64 } from "cesr-ts";
 import { toAID } from "../src/types/AID.js";
 import type { AID } from "../src/types/AID.js";
 import type { KeyState } from "../src/types/KeyState.js";
-
-/** CESR base64 alphabet */
-const B64 =
-  "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
-
-/** Base64url encode raw bytes using the CESR alphabet. */
-function encodeB64(bytes: Uint8Array): string {
-  let s = btoa(String.fromCharCode(...bytes));
-  return s.replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
-}
 
 /**
  * Encode a 32-byte Ed25519 public key as a qb64 Matter with code 'D'.
@@ -37,7 +28,7 @@ export function encodeEd25519IndexedSig(
   sigBytes: Uint8Array,
   index: number,
 ): string {
-  const indexChar = B64[index];
+  const indexChar = intToB64(index, 1);
   const sigB64 = encodeB64(sigBytes); // 64 bytes → 86 chars (base64url, no padding)
   return "A" + indexChar + sigB64; // 1 + 1 + 86 = 88 chars
 }
@@ -69,7 +60,7 @@ export async function signMessage(
   privateKey: CryptoKey,
   message: Uint8Array,
 ): Promise<Uint8Array> {
-  const sig = await crypto.subtle.sign("Ed25519", privateKey, message);
+  const sig = await crypto.subtle.sign("Ed25519", privateKey, message.slice());
   return new Uint8Array(sig);
 }
 

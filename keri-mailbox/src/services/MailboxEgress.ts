@@ -11,7 +11,8 @@ export interface MailboxEgressOptions {
 /**
  * Handles outbound message delivery (polling).
  *
- * Optionally performs challenge-response authentication before yielding messages.
+ * Performs challenge-response authentication before yielding messages.
+ * Validates that the poller is authorized to read the recipient's mailbox.
  * Delegates retrieval to the injected IMailboxStore.
  */
 export class MailboxEgress {
@@ -28,22 +29,35 @@ export class MailboxEgress {
    *
    * If both `challenge` and `signature` are present in params, performs
    * challenge-response authentication: verifies the signature against the
-   * recipient's key state before yielding any messages.
+   * poller's key state before yielding any messages.
+   *
+   * Poller authorization:
+   *   - If poller == recipient: always authorized (controller reading own mailbox).
+   *   - If poller != recipient: requires challenge-response auth against the
+   *     poller's key state. Proxy authorization (e.g. KERIA agent) is verified
+   *     by the transport layer presenting proof of delegation.
    *
    * Yields EgressEvent objects in topic/ordinal order as provided by the store.
    *
    * Throws if:
+   *   - The recipient is not provisioned.
    *   - Challenge-response authentication is requested and fails.
-   *   - The key state cannot be resolved for the recipient (auth only).
+   *   - The key state cannot be resolved for the poller (auth only).
    */
   async *poll(params: PollParams): AsyncIterable<EgressEvent> {
-    const { recipient, cursors, challenge, signature } = params;
+    const { poller, recipient, cursors, challenge, signature } = params;
+
+    const provisioned = await this.store.isProvisioned(recipient);
+    if (!provisioned) {
+      throw new Error(`Recipient ${recipient} is not provisioned`);
+    }
 
     if (challenge !== undefined && signature !== undefined) {
-      const keyState = await this.resolver.resolve(recipient);
+      // Resolve key state for the poller (who is signing the challenge)
+      const keyState = await this.resolver.resolve(poller);
       if (!keyState) {
         throw new Error(
-          `Cannot resolve key state for recipient ${recipient}`,
+          `Cannot resolve key state for poller ${poller}`,
         );
       }
       const valid = await verifyResponse(challenge, signature, keyState);

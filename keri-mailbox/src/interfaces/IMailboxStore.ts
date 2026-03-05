@@ -8,7 +8,8 @@ import type { StoreResult, EgressEvent } from "../types/results.js";
  */
 export interface IMailboxStore {
   /**
-   * Append a payload to a topic, returning its assigned ordinal and SHA-256 digest.
+   * Append a payload to a topic, returning its assigned ordinal, digest, and
+   * whether the payload was new to the message store (content-addressed dedup).
    * Ordinals are monotonically increasing per TopicAddress starting from 0.
    */
   store(topic: TopicAddress, payload: Uint8Array): Promise<StoreResult>;

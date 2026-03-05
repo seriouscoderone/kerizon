@@ -41,13 +41,33 @@ async function verifyEd25519(
   }
 }
 
-/** Parse a fraction string like "1/2" into a number. */
-function parseFraction(frac: string): number {
+/**
+ * Rational number represented as numerator/denominator pair.
+ * Used to avoid floating-point rounding errors in weighted threshold evaluation
+ * as required by the KERI specification.
+ */
+interface Rational {
+  num: bigint;
+  den: bigint;
+}
+
+/** Parse a fraction string like "1/2" into a Rational. Whole numbers become n/1. */
+function parseFraction(frac: string): Rational {
   const parts = frac.split("/");
-  if (parts.length === 1) return Number(parts[0]);
-  const num = Number(parts[0]);
-  const den = Number(parts[1]);
-  return den === 0 ? 0 : num / den;
+  if (parts.length === 1) return { num: BigInt(parts[0]), den: 1n };
+  const num = BigInt(parts[0]);
+  const den = BigInt(parts[1]);
+  return { num, den };
+}
+
+/** Add two rationals: a/b + c/d = (ad + bc) / bd */
+function rationalAdd(a: Rational, b: Rational): Rational {
+  return { num: a.num * b.den + b.num * a.den, den: a.den * b.den };
+}
+
+/** Check if a rational is >= 1 (i.e. num >= den). Assumes den > 0. */
+function rationalGte1(r: Rational): boolean {
+  return r.num >= r.den;
 }
 
 /**
@@ -123,16 +143,16 @@ export async function evaluateThreshold(
       }
     }
 
-    // Each group must independently reach weight sum >= 1.0
+    // Each group must independently reach weight sum >= 1 (using rational arithmetic)
     for (let g = 0; g < threshold.length; g++) {
       const group = threshold[g];
-      let groupSum = 0;
+      let groupSum: Rational = { num: 0n, den: 1n };
       for (let p = 0; p < group.length; p++) {
         if (successSet.has(`${g}:${p}`)) {
-          groupSum += parseFraction(group[p]);
+          groupSum = rationalAdd(groupSum, parseFraction(group[p]));
         }
       }
-      if (groupSum < 1.0 - Number.EPSILON) return false;
+      if (!rationalGte1(groupSum)) return false;
     }
 
     return true;

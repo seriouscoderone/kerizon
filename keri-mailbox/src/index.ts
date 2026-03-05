@@ -2,7 +2,7 @@
 export type { AID } from "./types/AID.js";
 export { toAID } from "./types/AID.js";
 export type { TopicAddress } from "./types/TopicAddress.js";
-export { topicKey } from "./types/TopicAddress.js";
+export { topicKey, isValidTopic } from "./types/TopicAddress.js";
 export type { Cursor } from "./types/Cursor.js";
 export type { Envelope } from "./types/Envelope.js";
 export type { KeyState } from "./types/KeyState.js";

@@ -9,6 +9,8 @@ export interface KeyState {
   threshold: Threshold;
   /** Current sequence number of the key event log. */
   sn: bigint;
+  /** Digest of the latest establishment event. */
+  digest?: string;
   /** AIDs of the current witness pool. */
   witnessAids: AID[];
 }

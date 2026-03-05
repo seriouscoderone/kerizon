@@ -2,6 +2,7 @@ import type { IMailboxStore } from "../interfaces/IMailboxStore.js";
 import type { IKeyStateResolver } from "../interfaces/IKeyStateResolver.js";
 import type { SubmitParams, SubmitResult } from "../types/results.js";
 import type { TopicAddress } from "../types/TopicAddress.js";
+import { isValidTopic } from "../types/TopicAddress.js";
 import { parseSad } from "../core/SadParser.js";
 import { parseAttachments } from "../core/AttachmentParser.js";
 import { evaluateThreshold } from "../core/ThresholdEvaluator.js";
@@ -37,6 +38,7 @@ export class MailboxIngress {
    * Submit a message payload to a recipient's mailbox topic.
    *
    * Throws if:
+   *   - The topic name is invalid (must start with `/`, alphanumeric/hyphens/underscores).
    *   - The recipient is not provisioned.
    *   - requireSenderAuth is true and no valid attachments are provided.
    *   - requireSenderAuth is true and signature verification fails.
@@ -44,6 +46,12 @@ export class MailboxIngress {
   async submit(params: SubmitParams): Promise<SubmitResult> {
     const { sender, recipient, topic, payload, attachments: attachmentBytes } =
       params;
+
+    if (!isValidTopic(topic)) {
+      throw new Error(
+        `Invalid topic '${topic}': must start with '/' and contain only alphanumeric characters, hyphens, and underscores`,
+      );
+    }
 
     const isProvisioned = await this.store.isProvisioned(recipient);
     if (!isProvisioned) {

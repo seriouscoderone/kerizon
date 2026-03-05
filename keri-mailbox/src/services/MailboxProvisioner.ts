@@ -111,11 +111,11 @@ export class MailboxProvisioner {
 
     if (route === "/end/role/add") {
       await this.store.provision(cid);
+      return { ok: true, action: "provisioned", aid: cid };
     } else {
       await this.store.deprovision(cid);
+      return { ok: true, action: "deprovisioned", aid: cid };
     }
-
-    return { ok: true, aid: cid };
   }
 
   /** Return true if an AID has provisioned this mailbox. */

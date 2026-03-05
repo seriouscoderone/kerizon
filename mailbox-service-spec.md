@@ -1,8 +1,10 @@
 # KERI Standalone Mailbox Service Specification
 
-**Version:** 0.1.0-draft
+**Version:** 0.2.0-draft
 **Status:** Draft
 **Date:** 2026-03-03
+**Normative basis:** KERI specification, CESR specification
+**Cross-checked against:** keri.host knowledge base, keripy reference implementation
 
 ---
 
@@ -50,14 +52,15 @@ This specification does **not** cover:
 | **Controller** | The entity that controls an AID by holding the corresponding private keys. A controller authors KERI events and signs messages. |
 | **KEL** | Key Event Log. The append-only, hash-chained sequence of key events (inception, rotation, interaction) that defines the authoritative history of an AID. |
 | **Key State** | The current cryptographic state of an AID: its active signing keys, rotation keys, thresholds, witnesses, and configuration. Derived from the latest establishment event in the KEL. |
-| **Witness** | An entity designated by a controller (in inception/rotation events) to receive, verify, receipt (sign), and store key events. Witnesses contribute to the TOAD (Threshold of Accountable Duplicity) and are trust infrastructure. |
+| **Witness** | An entity designated by a controller (in inception/rotation events) to receive, verify, receipt (sign), and store key events. Witnesses enforce a **first-seen policy**: they only receipt the first valid version of an event at a given sequence number. This prevents a malicious controller from presenting conflicting events (duplicity) to different witnesses. Witnesses contribute to the TOAD and are trust infrastructure. |
 | **CESR** | Composable Event Streaming Representation. A self-describing, composable encoding format used throughout KERI for primitives, events, and attachments. |
 | **Verfer** | A CESR-qualified public verification key. Used to verify signatures. |
 | **OOBI** | Out-of-Band Introduction. An untrusted `(URL, AID)` tuple that provides a discovery mechanism. OOBIs are resolved and then cryptographically verified via KERI. |
 | **Indirect Mode** | KERI's asynchronous operational mode, where controllers communicate via intermediary infrastructure (witnesses, mailboxes) rather than direct connections. The mailbox enables indirect mode. |
 | **KERIA** | KERI Agent — a multi-tenant cloud agent service that hosts identifiers and acts as a proxy for Signify edge clients. KERIA may act as a mailbox for its managed identifiers. |
 | **Signify** | A protocol and client library for "signing at the edge." Signify clients hold private keys locally and communicate with a KERIA cloud agent. The KERIA agent may poll mailboxes on behalf of the Signify client. |
-| **Endpoint Authorization** | A signed KERI reply message (`/end/role/add` or `/end/role/cut`) by which a controller cryptographically authorizes or deauthorizes a service endpoint for a specific role. |
+| **Watcher** | An infrastructure node that maintains a duplicate copy of a controller's KEL for independent verification. Watchers detect duplicity by comparing KEL versions across sources. They may serve as cached key state sources for mailboxes. |
+| **Endpoint Authorization** | A signed KERI reply message (`/end/role/add` or `/end/role/cut`) by which a controller cryptographically authorizes or deauthorizes a service endpoint for a specific role. These are **out-of-band** to the KEL — they require only signature verification, not KEL anchoring via seals. |
 
 ### 2.2 Mailbox-Specific Terms
 
@@ -68,7 +71,7 @@ This specification does **not** cover:
 | **Poller** | The entity retrieving messages from a mailbox. Usually the recipient themselves, but may be a proxy (e.g., KERIA polling on behalf of a Signify client). |
 | **Topic** | A named channel within a recipient's mailbox (e.g., `/receipt`, `/multisig`, `/credential`). Messages are appended to topics independently. |
 | **TopicAddress** | A composite key: `(recipient AID, topic name)`. Uniquely identifies a message stream within the mailbox. |
-| **Ordinal** | A monotonically increasing integer assigned to each message within a topic. Ordinals are scoped to a single `TopicAddress` — they provide ordering within a topic, not globally. |
+| **Ordinal** | A monotonically increasing integer assigned by the mailbox to each message within a topic. Ordinals are scoped to a single `TopicAddress` — they provide ordering within a topic, not globally. Distinct from KERI **sequence numbers** (`sn`) which are scoped to a KEL and globally unique per AID. |
 | **Cursor** | A `(TopicAddress, ordinal)` pair representing a poller's position in a topic log. The poller stores cursors locally and advances them as messages are consumed. |
 | **Provisioning** | The process by which a recipient AID authorizes the mailbox service to accept and store messages on its behalf. |
 
@@ -122,6 +125,8 @@ In the current keripy reference implementation, witnesses and mailboxes are co-l
 | **Changed via** | Key event (rotation required) | Endpoint authorization reply (no rotation needed) |
 
 A controller may declare 3 witnesses for TOAD purposes and 1 mailbox for message relay. These are independent decisions.
+
+**Important:** Mailboxes provide **availability** for message delivery but do not contribute to the **cryptographic accountability** provided by witnesses and TOAD. Controllers must maintain their witness configuration independently of their mailbox configuration. A validator processing messages retrieved from a mailbox will still verify the sender's KEL against witnesses and check that TOAD is met before trusting the message content.
 
 ### 3.3 Component Architecture
 
@@ -222,14 +227,14 @@ Topics represent categories of KERI protocol messages. The following topics are 
 |-------|---------|-----------|---------|
 | `/receipt` | Witness receipt events (signed endorsements of key events) | Witnesses | Deliver event receipts to controller |
 | `/reply` | Peer-to-peer exchange responses | Any controller | Direct reply to an exchange message |
-| `/replay` | Historical KEL segments | Any controller | Re-send of past key events |
+| `/replay` | Re-transmitted key events | Any controller | Re-transmission of key events from a controller's KEL in response to a query, used when a validator needs to reconstruct or verify a KEL from a specific point |
 | `/delegate` | Delegation requests and approvals | Delegators, Delegates | Delegation coordination |
 | `/multisig` | Multisig coordination messages (signature contributions, rotation proposals, join requests) | Multisig participants | Multi-party signing coordination |
 | `/credential` | IPEX credential exchange messages (grant, admit, offer, agree, spurn) | Credential issuers, holders, verifiers | Credential issuance and presentation |
 | `/challenge` | Authentication challenge-response words | Any controller | Mutual authentication between controllers |
 | `/oobi` | OOBI resolution requests and responses | Any controller | Out-of-band identifier introduction |
 
-**Extensibility:** Topic names are conventions, not a closed set. Implementations may define additional topics. The mailbox treats all topics identically — it does not assign semantic meaning to topic names.
+**Extensibility:** Topic names are conventions, not a closed set. Implementations may define additional topics. The mailbox treats all topics identically — it does not assign semantic meaning to topic names. Topics are **namespaces for message routing**, not semantic types enforced by the mailbox. The topic conventions are defined by KERI exchange protocols (IPEX for `/credential`, multisig coordination for `/multisig`, etc.), not by the mailbox itself. `/credential` and `/my-custom-topic` receive identical treatment.
 
 ---
 
@@ -350,13 +355,16 @@ The `/fwd` envelope format (from the current KERI implementation):
         "pre": "<recipient AID>",
         "topic": "<topic name>"
     },
+    "a": {},
     "e": {
-        "<embedded payload>": "..."
+        "evt": "<embedded event>"
     }
 }
 ```
 
-The mailbox parses the outer structure (`r`, `q.pre`, `q.topic`) but treats `e` as opaque bytes.
+The mailbox parses the outer structure (`r`, `q.pre`, `q.topic`) but treats the contents of `e` (embedded events) as opaque bytes. The `a` field contains payload attributes (typically empty for forwarded messages). The `e` field contains the embedded event to be delivered.
+
+> **Encoding note:** The example above is JSON for readability. KERI messages are typically transmitted as CESR streams (binary-encoded). If using CESR encoding, the mailbox must parse the outer EXN event structure and extract `r`, `q`, and `e` fields. The embedded event in `e` is a nested CESR event, not raw arbitrary bytes.
 
 ### 5.3 MailboxEgress
 
@@ -459,7 +467,11 @@ The KERI `/end/role/add` reply message has the following structure:
 
 This message is signed by the controller (`cid`) using their current signing keys. The mailbox verifies the signature against the controller's current key state (resolved via KeyStateResolver).
 
+**Verification model:** Endpoint authorizations are **out-of-band** to the KEL. The mailbox verifies only the **signature** on the reply message — it does NOT require the authorization to be anchored in the controller's KEL via a seal in an interaction event. This is by design: endpoint authorizations are lightweight service-level declarations, not trust-critical operations like key rotation. Both transferable (indexed signatures with establishment event reference) and non-transferable (direct public key signatures) authorizations are valid.
+
 **The mailbox's own AID:** The mailbox service itself must have an AID (non-transferable is sufficient). This AID is the `eid` in endpoint authorization replies. Controllers reference this AID when designating the mailbox.
+
+**Role vocabulary note:** The `mailbox` role is **not currently standardized** in the KERI specification. The KERI spec defines: `controller`, `witness`, `watcher`, `judge`, `juror`, and `registrar`. The `mailbox` role (along with `agent`, `gateway`, `peer`, `indexer`) is an implementation extension present in the keripy reference implementation. This specification proposes `mailbox` as a formal addition to the KERI endpoint role vocabulary. For backward compatibility, existing deployments use the `witness` role for co-located witness-mailbox services.
 
 ### 5.5 KeyStateResolver
 
@@ -526,13 +538,20 @@ Poller                              Mailbox
   │◀── Stream<EgressEvent> ───────────┤
 ```
 
+**Challenge format:** The challenge is a cryptographically random word list (BIP39 mnemonic, default 128-bit strength). The poller signs the entire challenge-response exchange message (an EXN message with route `/challenge/response` containing the word list and the poller's AID).
+
 **Verification steps:**
 
-1. Mailbox generates a cryptographically random nonce
-2. Poller signs the nonce with the private key corresponding to the recipient's AID (or the poller's AID if acting as proxy)
+1. Mailbox generates a challenge word list and sends it to the poller
+2. Poller constructs an EXN exchange message containing the words and their AID, signs the entire message
 3. Mailbox resolves the recipient's current key state via `KeyStateResolver.resolve(recipient)`
 4. Mailbox verifies the signature against the resolved public keys and signing threshold
-5. On success: begins streaming messages
+5. Mailbox verifies the words in the response match the issued challenge
+6. On success: begins streaming messages
+
+**Replay protection:** Challenges SHOULD have a limited validity window (recommended: 60 seconds). The mailbox SHOULD reject responses to expired challenges. Implementations SHOULD track issued challenges and invalidate them after use (single-use nonces) to prevent captured responses from being replayed.
+
+> **Note:** The keripy reference implementation currently uses a 300-second client-side polling timeout but does not enforce server-side challenge expiry or timestamp validation on responses. Production deployments SHOULD implement stricter replay protection.
 
 **Proxy authorization (KERIA case):**
 
@@ -574,6 +593,8 @@ The mailbox must be able to:
 2. Extract the public key (`Verfer`) from resolved key state
 3. Verify a signature against a message digest and public key
 4. Evaluate signing thresholds (simple numeric or weighted fractional)
+
+> **Threshold implementation note:** KERI supports both simple thresholds ("2 of 3 keys") and weighted fractional thresholds (e.g., keys with weights 1/2, 1/4, 1/4 where the sum must reach 1). Weighted threshold evaluation MUST use rational arithmetic (e.g., Python's `fractions.Fraction`), NOT floating-point. Floating-point rounding errors can cause incorrect threshold satisfaction results.
 
 ---
 
@@ -852,7 +873,19 @@ This tells senders: "To deliver messages to `{controllerAID}`, submit them to th
 | Agent | `http://host/oobi/{cid}/agent/{agentAID}` | KERIA cloud agent endpoint |
 | **Mailbox** | `http://host/oobi/{cid}/mailbox/{mbxAID}` | **Dedicated message relay** |
 
-### 11.2 OOBI Resolution by Senders
+### 11.2 OOBI Resolution Semantics
+
+When a sender resolves a mailbox OOBI, the following steps occur:
+
+1. The sender performs an HTTP GET to the OOBI URL (e.g., `http://mbx.example.com/oobi/{cid}/mailbox/{mbxAID}`)
+2. The mailbox returns the **mailbox AID's key state** (its public keys, KEL, or a key state notice)
+3. The sender **verifies the mailbox AID** by checking its key state (for non-transferable AIDs, this is a direct public key verification)
+4. The sender **caches the association** between the recipient AID (`cid`) and the mailbox endpoint
+5. Subsequent message deliveries to this recipient use the cached endpoint
+
+> **Trust model:** OOBIs are untrusted discovery hints. The sender trusts the mailbox endpoint only because the **recipient** authorized it via a signed `/end/role/add` reply. The OOBI merely provides the network address; the authorization provides the trust.
+
+### 11.3 OOBI-Based Routing by Senders
 
 When a sender wants to deliver a message to a recipient:
 
@@ -877,8 +910,34 @@ When a sender wants to deliver a message to a recipient:
 | **Key compromise of mailbox AID** — attacker obtains mailbox's private key | Mailbox AID is non-transferable; compromise only affects mailbox identity, not stored message confidentiality (messages are KERI-signed by senders, not encrypted by mailbox) |
 | **Man-in-the-middle** — attacker intercepts polling connections | TLS required for all transport. KERI signatures on messages provide end-to-end integrity regardless of transport. |
 | **Denial of service** — attacker overwhelms the mailbox | Rate limiting, per-AID quotas, standard DoS mitigations |
+| **Duplicitous controller** — controller presents conflicting KELs to different mailboxes | The mailbox does not detect duplicity — that is the responsibility of witnesses, watchers, and validators. A mailbox will store a message from a duplicitous controller; the recipient's validator will detect and reject it during verification. |
+| **Compromised controller keys** — attacker obtains controller's private keys and issues `/end/role/cut` to evict the legitimate controller | The attacker can deprovision the mailbox, but: (1) the controller can rotate to new keys via their KEL, (2) validators verify the full KEL history not just current keys, (3) the legitimate controller can provision a new mailbox after key rotation. |
 
-### 12.2 Confidentiality
+### 12.2 Temporal Ordering and Causal Consistency
+
+The mailbox provides per-topic ordering (messages within a single topic are ordered by ordinal) but does **not** guarantee ordering across topics. This means:
+
+- A rotation event in `/receipt` and a multisig coordination message in `/multisig` may arrive in any relative order
+- A delegation request in `/delegate` may arrive before the delegator's KEL events in `/replay`
+- KERI protocol messages may have temporal dependencies (e.g., a rotation event must be processed before receipts for that rotation)
+
+Recipients MUST handle out-of-order cross-topic dependencies via **escrows** — a standard KERI mechanism where messages that cannot yet be processed (because a dependency hasn't arrived) are held in escrow and retried when the dependency arrives. The mailbox does not manage or enforce causal ordering.
+
+### 12.3 Rate Limiting and Quotas
+
+Production mailbox deployments SHOULD implement the following limits:
+
+| Limit | Scope | Recommended Default | Purpose |
+|-------|-------|-------------------|---------|
+| **Message rate** | Per-recipient, per-second | 100 msg/s | Prevent mailbox stuffing |
+| **Sender rate** | Per-sender, per-second | 50 msg/s | Prevent spam from one source |
+| **Connection limit** | Per-recipient, concurrent | 5 connections | Prevent resource exhaustion |
+| **Storage quota** | Per-recipient, total | 100 MB | Bound storage growth |
+| **Message size** | Per-message | 1 MB | Prevent oversized payloads |
+
+These limits are operational guidance, not protocol requirements. Implementations SHOULD make them configurable.
+
+### 12.4 Confidentiality
 
 The mailbox stores messages **in cleartext** (as submitted). Message confidentiality is **not** a mailbox concern:
 
@@ -886,7 +945,7 @@ The mailbox stores messages **in cleartext** (as submitted). Message confidentia
 - If confidential exchange is needed, it is handled at the application layer via encrypted CESR streams (ESSR) before submission to the mailbox
 - The mailbox operator can read stored messages — this is acceptable because messages are cryptographically signed by their senders, and the mailbox cannot forge or modify them
 
-### 12.3 Integrity
+### 12.5 Integrity
 
 Message integrity is guaranteed by KERI's cryptographic properties, not by the mailbox:
 
@@ -1013,7 +1072,7 @@ KeyStateResolver
 |-------|-------------------|---------------------|
 | `/receipt` | Witnesses | Signed endorsements of key events |
 | `/reply` | Any controller | Direct peer-to-peer exchange responses |
-| `/replay` | Any controller | Historical KEL segments |
+| `/replay` | Any controller | Re-transmitted key events in response to a query |
 | `/delegate` | Delegators, delegates | Delegation requests and approval events |
 | `/multisig` | Multisig participants | Signature contributions, join/rotate coordination |
 | `/credential` | Issuers, holders, verifiers | IPEX grant/admit/offer/agree/spurn messages |

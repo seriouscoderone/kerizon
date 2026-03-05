@@ -43,10 +43,34 @@ describe("Full mailbox flow (no sender auth)", () => {
       ingress.submit({
         sender: dummyAID("Bob"),
         recipient: alice,
-        topic: "notice",
+        topic: "/notice",
         payload: new Uint8Array([1]),
       }),
     ).rejects.toThrow(/not provisioned/i);
+  });
+
+  it("submit fails if topic is invalid", async () => {
+    await store.provision(alice);
+    await expect(
+      ingress.submit({
+        sender: dummyAID("Bob"),
+        recipient: alice,
+        topic: "no-leading-slash",
+        payload: new Uint8Array([1]),
+      }),
+    ).rejects.toThrow(/invalid topic/i);
+  });
+
+  it("submit fails for empty topic '/'", async () => {
+    await store.provision(alice);
+    await expect(
+      ingress.submit({
+        sender: dummyAID("Bob"),
+        recipient: alice,
+        topic: "/",
+        payload: new Uint8Array([1]),
+      }),
+    ).rejects.toThrow(/invalid topic/i);
   });
 
   it("provision → submit → poll round-trip", async () => {
@@ -61,13 +85,13 @@ describe("Full mailbox flow (no sender auth)", () => {
     const r1 = await ingress.submit({
       sender,
       recipient: alice,
-      topic: "notice",
+      topic: "/notice",
       payload: p1,
     });
     const r2 = await ingress.submit({
       sender,
       recipient: alice,
-      topic: "notice",
+      topic: "/notice",
       payload: p2,
     });
 
@@ -78,8 +102,9 @@ describe("Full mailbox flow (no sender auth)", () => {
     // Poll from the beginning
     const events: EgressEvent[] = [];
     for await (const ev of egress.poll({
+      poller: alice,
       recipient: alice,
-      cursors: new Map([["notice", 0n]]),
+      cursors: new Map([["/notice", 0n]]),
     })) {
       events.push(ev);
     }
@@ -99,15 +124,16 @@ describe("Full mailbox flow (no sender auth)", () => {
       await ingress.submit({
         sender,
         recipient: alice,
-        topic: "log",
+        topic: "/log",
         payload: new Uint8Array([i]),
       });
     }
 
     const events: EgressEvent[] = [];
     for await (const ev of egress.poll({
+      poller: alice,
       recipient: alice,
-      cursors: new Map([["log", 3n]]),
+      cursors: new Map([["/log", 3n]]),
     })) {
       events.push(ev);
     }
@@ -115,6 +141,20 @@ describe("Full mailbox flow (no sender auth)", () => {
     expect(events).toHaveLength(2);
     expect(events[0].ordinal).toBe(3n);
     expect(events[1].ordinal).toBe(4n);
+  });
+
+  it("poll fails if recipient is not provisioned", async () => {
+    await expect(
+      (async () => {
+        for await (const _ of egress.poll({
+          poller: alice,
+          recipient: alice,
+          cursors: new Map([["/inbox", 0n]]),
+        })) {
+          // should not reach here
+        }
+      })(),
+    ).rejects.toThrow(/not provisioned/i);
   });
 
   it("provisioner.isAuthorized / listAuthorized reflect store state", async () => {
@@ -125,6 +165,26 @@ describe("Full mailbox flow (no sender auth)", () => {
 
     expect(await provisioner.isAuthorized(alice)).toBe(true);
     expect(await provisioner.listAuthorized()).toContain(alice);
+  });
+
+  it("store returns isNew=true for first occurrence, false for duplicate", async () => {
+    await store.provision(alice);
+    const payload = new TextEncoder().encode("duplicate-test");
+    const sender = dummyAID("Bob");
+
+    const r1 = await store.store(
+      { recipient: alice, topic: "/notice" },
+      payload,
+    );
+    const r2 = await store.store(
+      { recipient: alice, topic: "/notice" },
+      payload,
+    );
+
+    expect(r1.isNew).toBe(true);
+    expect(r2.isNew).toBe(false);
+    expect(r1.digest).toBe(r2.digest);
+    expect(r2.ordinal).toBe(r1.ordinal + 1n); // ordinal still increments
   });
 });
 
@@ -150,7 +210,7 @@ describe("Challenge-response authenticated polling", () => {
     await ingress.submit({
       sender: dummyAID("Bob"),
       recipient: alice,
-      topic: "inbox",
+      topic: "/inbox",
       payload,
     });
 
@@ -163,8 +223,9 @@ describe("Challenge-response authenticated polling", () => {
 
     const events: EgressEvent[] = [];
     for await (const ev of egress.poll({
+      poller: alice,
       recipient: alice,
-      cursors: new Map([["inbox", 0n]]),
+      cursors: new Map([["/inbox", 0n]]),
       challenge: nonce,
       signature: sigQb64,
     })) {
@@ -199,8 +260,9 @@ describe("Challenge-response authenticated polling", () => {
     await expect(
       (async () => {
         for await (const _ of egress.poll({
+          poller: alice,
           recipient: alice,
-          cursors: new Map([["inbox", 0n]]),
+          cursors: new Map([["/inbox", 0n]]),
           challenge: nonce,
           signature: sigQb64,
         })) {
@@ -245,7 +307,6 @@ describe("MailboxProvisioner.processAuthorization", () => {
     const sigQb64 = encodeEd25519IndexedSig(sigBytes, 0);
 
     // Build CESR attachment: -AAB (ControllerIdxSigs, count=1) + indexed sig
-    // Counter code -AAB = "-AAB" prefix for 1 indexed sig
     const attachmentStr = `-AAB${sigQb64}`;
     const attachmentBytes = new TextEncoder().encode(attachmentStr);
 
@@ -258,9 +319,58 @@ describe("MailboxProvisioner.processAuthorization", () => {
     const result = await provisioner.processAuthorization(combined);
     expect(result.ok).toBe(true);
     if (result.ok) {
+      expect(result.action).toBe("provisioned");
       expect(result.aid).toBe(controllerAid);
     }
     expect(await store.isProvisioned(controllerAid)).toBe(true);
+  });
+
+  it("deprovisions an AID from a valid signed /end/role/cut reply", async () => {
+    const kp = await generateKeyPair();
+    const controllerAid = dummyAID("Alice");
+    const mailboxAid = dummyAID("Mailbox");
+
+    const store = new MemoryMailboxStore();
+    const resolver = new MockKeyStateResolver(
+      new Map([[controllerAid, makeKeyState(kp.verferQb64)]]),
+    );
+    const provisioner = new MailboxProvisioner({ store, resolver, mailboxAid });
+
+    // First provision
+    await store.provision(controllerAid);
+    expect(await store.isProvisioned(controllerAid)).toBe(true);
+
+    // Build the KERI /end/role/cut reply
+    const replyBytes = makeKeriJson({
+      t: "rpy",
+      d: "EABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnop",
+      dt: "2026-01-01T00:00:00.000000+00:00",
+      r: "/end/role/cut",
+      a: {
+        cid: controllerAid,
+        role: "mailbox",
+        eid: mailboxAid,
+      },
+    });
+
+    const sigBytes = await signMessage(kp.privateKey, replyBytes);
+    const sigQb64 = encodeEd25519IndexedSig(sigBytes, 0);
+    const attachmentStr = `-AAB${sigQb64}`;
+    const attachmentBytes = new TextEncoder().encode(attachmentStr);
+
+    const combined = new Uint8Array(
+      replyBytes.length + attachmentBytes.length,
+    );
+    combined.set(replyBytes);
+    combined.set(attachmentBytes, replyBytes.length);
+
+    const result = await provisioner.processAuthorization(combined);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.action).toBe("deprovisioned");
+      expect(result.aid).toBe(controllerAid);
+    }
+    expect(await store.isProvisioned(controllerAid)).toBe(false);
   });
 
   it("rejects a reply with wrong route", async () => {
