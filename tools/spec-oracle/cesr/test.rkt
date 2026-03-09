@@ -5,7 +5,8 @@
 (require rackunit
          "tables.rkt"
          "math.rkt"
-         "transforms.rkt")
+         "transforms.rkt"
+         "counters.rkt")
 
 ;; ---- Base64url round-trip ----
 
@@ -111,5 +112,25 @@
            [from-B<-R (B<-R code raw)])
       (check-equal? from-text from-B<-R
                     (format "T<-R/B<-R mismatch for ~a" code)))))
+
+;; ---- Counter sizing ----
+
+(test-case "counter-text-size: mod 4 = 0 for all counter entries"
+  (for ([entry (all-counter-entries)])
+    (let* ([code (counter-entry-code entry)]
+           [ts (counter-text-size code)])
+      (check-equal? (modulo ts 4) 0
+                    (format "counter-text-size mod 4 != 0 for ~a: ts=~a" code ts)))))
+
+(test-case "counter-binary-size: mod 3 = 0 for all counter entries"
+  (for ([entry (all-counter-entries)])
+    (let* ([code (counter-entry-code entry)]
+           [bs (counter-binary-size code)])
+      (check-equal? (modulo bs 3) 0
+                    (format "counter-binary-size mod 3 != 0 for ~a: bs=~a" code bs)))))
+
+(test-case "spot-check -A: text-size=4, binary-size=3"
+  (check-equal? (counter-text-size "-A") 4)
+  (check-equal? (counter-binary-size "-A") 3))
 
 (displayln "All cesr tests passed.")
