@@ -1,7 +1,7 @@
 ORACLE_DIR := $(dir $(abspath $(lastword $(MAKEFILE_LIST))))
 OUTPUT_DIR := $(ORACLE_DIR)output
 
-.PHONY: all test laws validate generate emit-gherkin emit-properties clean
+.PHONY: all test laws validate generate emit-gherkin emit-properties test-ts clean
 
 all: emit-gherkin emit-properties
 
@@ -28,6 +28,10 @@ emit-gherkin: generate
 emit-properties: generate
 	@echo "=== Generating property-based test file ==="
 	racket $(ORACLE_DIR)generate/emit-property-tests.rkt $(OUTPUT_DIR)
+
+test-ts: emit-properties
+	@echo "=== Running emitted TypeScript property tests ==="
+	cd $(ORACLE_DIR) && npx vitest run
 
 clean:
 	rm -rf $(OUTPUT_DIR)

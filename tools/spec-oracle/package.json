@@ -1,0 +1,9 @@
+{
+  "name": "cesr-laws-tests",
+  "private": true,
+  "type": "module",
+  "devDependencies": {
+    "vitest": "^3.0.0",
+    "fast-check": "^4.0.0"
+  }
+}
