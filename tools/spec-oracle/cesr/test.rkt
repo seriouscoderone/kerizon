@@ -6,7 +6,8 @@
          "tables.rkt"
          "math.rkt"
          "transforms.rkt"
-         "counters.rkt")
+         "counters.rkt"
+         "parse.rkt")
 
 ;; ---- Base64url round-trip ----
 
@@ -132,5 +133,48 @@
 (test-case "spot-check -A: text-size=4, binary-size=3"
   (check-equal? (counter-text-size "-A") 4)
   (check-equal? (counter-binary-size "-A") 3))
+
+;; ---- R<-T round-trip ----
+
+(test-case "R<-T round-trip for all entries"
+  (for ([entry (all-entries)])
+    (let* ([raw (valid-raw-for-entry entry 42)]
+           [code (entry-code entry)]
+           [text (T<-R code raw)]
+           [result (R<-T text)])
+      (check-equal? (parse-result-code result) code
+                    (format "R<-T code mismatch for ~a" code))
+      (check-equal? (parse-result-raw result) raw
+                    (format "R<-T raw mismatch for ~a" code)))))
+
+;; ---- R<-B round-trip ----
+
+(test-case "R<-B round-trip for all entries"
+  (for ([entry (all-entries)])
+    (let* ([raw (valid-raw-for-entry entry 42)]
+           [code (entry-code entry)]
+           [bin (B<-R code raw)]
+           [result (R<-B bin)])
+      (check-equal? (parse-result-code result) code
+                    (format "R<-B code mismatch for ~a" code))
+      (check-equal? (parse-result-raw result) raw
+                    (format "R<-B raw mismatch for ~a" code)))))
+
+;; ---- lead-constrained-bits spot checks ----
+
+(test-case "lead-constrained-bits: K→6, 0C→12, D→0"
+  (check-equal? (lead-constrained-bits "K" 57) 6)
+  (check-equal? (lead-constrained-bits "0C" 24) 12)
+  (check-equal? (lead-constrained-bits "D" 32) 0))
+
+;; ---- valid-raw-for-entry constraint verification for K ----
+
+(test-case "valid-raw-for-entry: K has top 6 bits zeroed"
+  (let ([raw (valid-raw-for-entry (code-lookup "K") 255)])
+    ;; 6 constrained bits → raw[0] top 6 bits must be 0
+    ;; 255 & 0x03 = 3
+    (check-equal? (bytes-ref raw 0) 3)
+    ;; Rest should be 255
+    (check-equal? (bytes-ref raw 1) 255)))
 
 (displayln "All cesr tests passed.")

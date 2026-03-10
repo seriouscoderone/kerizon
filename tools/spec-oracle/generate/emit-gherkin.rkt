@@ -113,6 +113,23 @@
     [(counter-selector-dispatch)
      (fprintf port "    Given the complete counter code table\n")
      (fprintf port "    Then every counter code should start with \"-\" and have code-size 2\n")]
+    ;; === Parse laws (table-universal) ===
+    [(text-round-trip)
+     (fprintf port "    Given code \"<code>\" with raw-size <rawSize> and valid raw bytes\n")
+     (fprintf port "    When I encode with T<-R and parse back with R<-T\n")
+     (fprintf port "    Then both the code and raw should be recovered\n")]
+    [(binary-round-trip)
+     (fprintf port "    Given code \"<code>\" with raw-size <rawSize> and valid raw bytes\n")
+     (fprintf port "    When I encode with B<-R and parse back with R<-B\n")
+     (fprintf port "    Then both the code and raw should be recovered\n")]
+    [(code-extraction)
+     (fprintf port "    Given code \"<code>\" with raw-size <rawSize> and any raw bytes\n")
+     (fprintf port "    When I encode with T<-R and parse back with R<-T\n")
+     (fprintf port "    Then the parsed code should equal the original code\n")]
+    [(parse-equivalence)
+     (fprintf port "    Given code \"<code>\" with raw-size <rawSize> and valid raw bytes\n")
+     (fprintf port "    When I parse via R<-T and via R<-B\n")
+     (fprintf port "    Then the parsed raw bytes should be identical\n")]
     [else (error 'emit-steps "unknown law: ~a" (law-id l))]))
 
 ;; --- Examples tables ---

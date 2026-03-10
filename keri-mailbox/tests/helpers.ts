@@ -1,36 +1,23 @@
-import { encodeB64, intToB64 } from "cesr-ts";
+import { Matter, Indexer } from "cesr-codec";
 import { toAID } from "../src/types/AID.js";
 import type { AID } from "../src/types/AID.js";
 import type { KeyState } from "../src/types/KeyState.js";
 
 /**
  * Encode a 32-byte Ed25519 public key as a qb64 Matter with code 'D'.
- * CESR format: 'D' + base64url([0x00, ...keyBytes]) dropping the leading 'A'.
  */
 export function encodeEd25519Verfer(keyBytes: Uint8Array): string {
-  // paw = [0, ...keyBytes] (ps=1 lead byte for code D with hs=1)
-  const paw = new Uint8Array(33);
-  paw[0] = 0;
-  paw.set(keyBytes, 1);
-  const all = encodeB64(paw); // 44 chars; paw[0]=0 → first char is 'A'
-  return "D" + all.slice(1); // replace leading 'A' with code 'D'
+  return new Matter({ code: "D", raw: keyBytes }).qb64;
 }
 
 /**
  * Encode a 64-byte Ed25519 signature as a qb64 Indexer with code 'A' + index.
- * CESR format: 'A' + b64(index) + base64url(sigBytes)
- *
- * The Indexer parser for code 'A' (hs=1, ss=1, ls=0, fs=88) does:
- *   raw = decodeB64(qb64.slice(2, 88))
- * So qb64.slice(2) must be the 86-char base64url encoding of the 64-byte sig.
  */
 export function encodeEd25519IndexedSig(
   sigBytes: Uint8Array,
   index: number,
 ): string {
-  const indexChar = intToB64(index, 1);
-  const sigB64 = encodeB64(sigBytes); // 64 bytes → 86 chars (base64url, no padding)
-  return "A" + indexChar + sigB64; // 1 + 1 + 86 = 88 chars
+  return new Indexer({ code: "A", raw: sigBytes, index }).qb64;
 }
 
 export interface Ed25519KeyPair {

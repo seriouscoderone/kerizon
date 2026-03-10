@@ -1,4 +1,4 @@
-import { parseIndexerFromText, parseMatterFromText } from "cesr-ts";
+import { parseIndexerFromText, parseMatterFromText } from "cesr-codec";
 import type { KeyState } from "../types/KeyState.js";
 import { evaluateThreshold } from "./ThresholdEvaluator.js";
 

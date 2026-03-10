@@ -128,6 +128,63 @@
   ;; BFromR
   (fprintf port "function BFromR(code: string, raw: Uint8Array): Uint8Array {\n")
   (fprintf port "  return base64urlDecode(TFromR(code, raw));\n")
+  (fprintf port "}\n\n")
+
+  ;; CODE_LOOKUP
+  (fprintf port "const CODE_LOOKUP = new Map<string, typeof CODE_TABLE[number]>();\n")
+  (fprintf port "for (const entry of CODE_TABLE) {\n")
+  (fprintf port "  CODE_LOOKUP.set(entry.code, entry);\n")
+  (fprintf port "}\n\n")
+
+  ;; selectorDispatch
+  (fprintf port "function selectorDispatch(firstChar: string): 1 | 2 {\n")
+  (fprintf port "  return (firstChar === '0' || firstChar === '-') ? 2 : 1;\n")
+  (fprintf port "}\n\n")
+
+  ;; leadConstrainedBits
+  (fprintf port "function leadConstrainedBits(code: string, rawSize: number): number {\n")
+  (fprintf port "  const cs = code.length;\n")
+  (fprintf port "  const ps = padSize(code, rawSize);\n")
+  (fprintf port "  return cs > ps ? (cs - ps) * 6 : 0;\n")
+  (fprintf port "}\n\n")
+
+  ;; validRawForEntry
+  (fprintf port "function validRawForEntry(entry: typeof CODE_TABLE[number], fillByte: number): Uint8Array {\n")
+  (fprintf port "  const raw = new Uint8Array(entry.rawSize).fill(fillByte);\n")
+  (fprintf port "  const lcb = leadConstrainedBits(entry.code, entry.rawSize);\n")
+  (fprintf port "  if (lcb > 0) {\n")
+  (fprintf port "    const fullBytes = Math.floor(lcb / 8);\n")
+  (fprintf port "    const remainingBits = lcb % 8;\n")
+  (fprintf port "    for (let i = 0; i < fullBytes; i++) raw[i] = 0;\n")
+  (fprintf port "    if (remainingBits > 0) {\n")
+  (fprintf port "      raw[fullBytes] &= (1 << (8 - remainingBits)) - 1;\n")
+  (fprintf port "    }\n")
+  (fprintf port "  }\n")
+  (fprintf port "  return raw;\n")
+  (fprintf port "}\n\n")
+
+  ;; ParseResult
+  (fprintf port "interface ParseResult {\n")
+  (fprintf port "  code: string;\n")
+  (fprintf port "  raw: Uint8Array;\n")
+  (fprintf port "}\n\n")
+
+  ;; RFromT
+  (fprintf port "function RFromT(text: string): ParseResult {\n")
+  (fprintf port "  const cs = selectorDispatch(text[0]);\n")
+  (fprintf port "  const code = text.slice(0, cs);\n")
+  (fprintf port "  const entry = CODE_LOOKUP.get(code);\n")
+  (fprintf port "  if (!entry) throw new Error(`Unknown CESR code: ${code}`);\n")
+  (fprintf port "  const ps = padSize(code, entry.rawSize);\n")
+  (fprintf port "  const restored = 'A'.repeat(cs) + text.slice(cs);\n")
+  (fprintf port "  const padded = base64urlDecode(restored);\n")
+  (fprintf port "  const raw = padded.slice(ps);\n")
+  (fprintf port "  return { code, raw };\n")
+  (fprintf port "}\n\n")
+
+  ;; RFromB
+  (fprintf port "function RFromB(binary: Uint8Array): ParseResult {\n")
+  (fprintf port "  return RFromT(base64urlEncode(binary));\n")
   (fprintf port "}\n\n"))
 
 ;; --- Test blocks ---
@@ -310,6 +367,46 @@
      (fprintf port "    for (const entry of COUNTER_TABLE) {\n")
      (fprintf port "      expect(entry.code[0]).toBe('-');\n")
      (fprintf port "      expect(entry.code.length).toBe(2);\n")
+     (fprintf port "    }\n")
+     (fprintf port "  });\n")]
+    ;; === Parse laws (table-universal) ===
+    [(text-round-trip)
+     (fprintf port "  test('~a: ~a', () => {\n" (law-id l) (law-name l))
+     (fprintf port "    for (const entry of CODE_TABLE) {\n")
+     (fprintf port "      const raw = validRawForEntry(entry, 42);\n")
+     (fprintf port "      const text = TFromR(entry.code, raw);\n")
+     (fprintf port "      const result = RFromT(text);\n")
+     (fprintf port "      expect(result.code).toBe(entry.code);\n")
+     (fprintf port "      expect(result.raw).toEqual(raw);\n")
+     (fprintf port "    }\n")
+     (fprintf port "  });\n")]
+    [(binary-round-trip)
+     (fprintf port "  test('~a: ~a', () => {\n" (law-id l) (law-name l))
+     (fprintf port "    for (const entry of CODE_TABLE) {\n")
+     (fprintf port "      const raw = validRawForEntry(entry, 42);\n")
+     (fprintf port "      const bin = BFromR(entry.code, raw);\n")
+     (fprintf port "      const result = RFromB(bin);\n")
+     (fprintf port "      expect(result.code).toBe(entry.code);\n")
+     (fprintf port "      expect(result.raw).toEqual(raw);\n")
+     (fprintf port "    }\n")
+     (fprintf port "  });\n")]
+    [(code-extraction)
+     (fprintf port "  test('~a: ~a', () => {\n" (law-id l) (law-name l))
+     (fprintf port "    for (const entry of CODE_TABLE) {\n")
+     (fprintf port "      const raw = new Uint8Array(entry.rawSize).fill(255);\n")
+     (fprintf port "      const text = TFromR(entry.code, raw);\n")
+     (fprintf port "      const result = RFromT(text);\n")
+     (fprintf port "      expect(result.code).toBe(entry.code);\n")
+     (fprintf port "    }\n")
+     (fprintf port "  });\n")]
+    [(parse-equivalence)
+     (fprintf port "  test('~a: ~a', () => {\n" (law-id l) (law-name l))
+     (fprintf port "    for (const entry of CODE_TABLE) {\n")
+     (fprintf port "      const raw = validRawForEntry(entry, 42);\n")
+     (fprintf port "      const text = TFromR(entry.code, raw);\n")
+     (fprintf port "      const resultT = RFromT(text);\n")
+     (fprintf port "      const resultB = RFromB(base64urlDecode(text));\n")
+     (fprintf port "      expect(resultT.raw).toEqual(resultB.raw);\n")
      (fprintf port "    }\n")
      (fprintf port "  });\n")]
     [else (error 'emit-law-test "unknown law: ~a" (law-id l))]))

@@ -1,5 +1,5 @@
-import { Indexer, Matter, isPrimitiveTuple } from "cesr-ts";
-import type { AttachmentGroup } from "cesr-ts";
+import { Indexer, Matter, isPrimitiveTuple } from "cesr-codec";
+import type { AttachmentGroup } from "cesr-codec";
 
 /** One indexed signature from a ControllerIdxSigs or WitnessIdxSigs group. */
 export interface IndexedSig {

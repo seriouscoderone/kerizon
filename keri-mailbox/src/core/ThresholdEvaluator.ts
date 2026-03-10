@@ -1,4 +1,4 @@
-import { parseMatterFromText } from "cesr-ts";
+import { parseMatterFromText } from "cesr-codec";
 import type { KeyState } from "../types/KeyState.js";
 import type { IndexedSig, CoupledSig } from "./AttachmentParser.js";
 

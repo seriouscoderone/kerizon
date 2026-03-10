@@ -8,7 +8,8 @@
          "tables.rkt"
          "math.rkt"
          "transforms.rkt"
-         "counters.rkt")
+         "counters.rkt"
+         "parse.rkt")
 
 (provide law law-id law-category law-name law-description law-scope law-verifier
          law-result law-result-law law-result-outcome
@@ -373,10 +374,81 @@
                      (format "~a: code-size=~a expected=2" code cs)]
                     [else (loop (cdr entries))]))))))))
 
+;; --- Parse Laws (scope: table-universal) ---
+
+(define parse-laws
+  (list
+   (law 'text-round-trip 'parse
+        "Text Round-Trip"
+        "R<-T(T<-R(code, validRaw)) recovers both code and raw for every code table entry"
+        'table-universal
+        (lambda ()
+          (check-all-entries
+           (lambda (entry)
+             (let* ([code (entry-code entry)]
+                    [raw (valid-raw-for-entry entry 42)]
+                    [text (T<-R code raw)]
+                    [result (R<-T text)])
+               (cond
+                 [(not (equal? (parse-result-code result) code))
+                  (format "~a: code mismatch: got ~a" code (parse-result-code result))]
+                 [(not (equal? (parse-result-raw result) raw))
+                  (format "~a: raw mismatch" code)]
+                 [else #t]))))))
+
+   (law 'binary-round-trip 'parse
+        "Binary Round-Trip"
+        "R<-B(B<-R(code, validRaw)) recovers both code and raw for every code table entry"
+        'table-universal
+        (lambda ()
+          (check-all-entries
+           (lambda (entry)
+             (let* ([code (entry-code entry)]
+                    [raw (valid-raw-for-entry entry 42)]
+                    [bin (B<-R code raw)]
+                    [result (R<-B bin)])
+               (cond
+                 [(not (equal? (parse-result-code result) code))
+                  (format "~a: code mismatch: got ~a" code (parse-result-code result))]
+                 [(not (equal? (parse-result-raw result) raw))
+                  (format "~a: raw mismatch" code)]
+                 [else #t]))))))
+
+   (law 'code-extraction 'parse
+        "Code Extraction"
+        "R<-T(T<-R(code, anyRaw)).code = code for every code table entry"
+        'table-universal
+        (lambda ()
+          (check-all-entries
+           (lambda (entry)
+             (let* ([code (entry-code entry)]
+                    [rs (entry-raw-size entry)]
+                    [raw (make-bytes rs 255)]
+                    [text (T<-R code raw)]
+                    [result (R<-T text)])
+               (if (equal? (parse-result-code result) code) #t
+                   (format "~a: code extraction failed: got ~a"
+                           code (parse-result-code result))))))))
+
+   (law 'parse-equivalence 'parse
+        "Parse Equivalence"
+        "R<-T(text).raw = R<-B(decode(text)).raw for every code table entry with valid raw"
+        'table-universal
+        (lambda ()
+          (check-all-entries
+           (lambda (entry)
+             (let* ([code (entry-code entry)]
+                    [raw (valid-raw-for-entry entry 42)]
+                    [text (T<-R code raw)]
+                    [result-t (R<-T text)]
+                    [result-b (R<-B (base64url-decode text))])
+               (if (equal? (parse-result-raw result-t) (parse-result-raw result-b)) #t
+                   (format "~a: parse equivalence failed" code)))))))))
+
 ;; --- All Laws ---
 
 (define all-laws-list
-  (append sizing-laws encoding-laws transform-laws self-framing-laws composition-laws counter-laws))
+  (append sizing-laws encoding-laws transform-laws self-framing-laws composition-laws counter-laws parse-laws))
 
 (define (all-laws) all-laws-list)
 

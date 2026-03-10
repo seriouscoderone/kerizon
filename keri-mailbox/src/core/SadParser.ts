@@ -1,5 +1,5 @@
-import { parseBytes } from "cesr-ts";
-import type { AttachmentGroup } from "cesr-ts";
+import { parseBytes } from "cesr-codec";
+import type { AttachmentGroup } from "cesr-codec";
 
 /** Outer fields of a KERI SAD (Self-Addressing Data) message. */
 export interface SadFields {

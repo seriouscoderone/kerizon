@@ -24,7 +24,7 @@ export type {
 export type { IMailboxStore } from "./interfaces/IMailboxStore.js";
 export type { IKeyStateResolver } from "./interfaces/IKeyStateResolver.js";
 
-// ─── Core utilities (cesr-ts integration) ────────────────────────────────────
+// ─── Core utilities (cesr-codec integration) ─────────────────────────────────
 export { parseSad } from "./core/SadParser.js";
 export type { SadFields, ParsedMessage } from "./core/SadParser.js";
 

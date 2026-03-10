@@ -1,7 +1,7 @@
 {
-  "name": "keri-mailbox",
+  "name": "cesr-codec",
   "version": "0.1.0",
-  "description": "Pure TypeScript KERI mailbox abstraction library with dependency injection",
+  "description": "CESR codec library — spec-oracle-generated encoding/decoding for Composable Event Streaming Representation",
   "license": "Apache-2.0",
   "type": "module",
   "exports": {
@@ -11,15 +11,14 @@
       "require": "./dist/index.cjs"
     }
   },
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "build": "tsup",
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit"
-  },
-  "dependencies": {
-    "cesr-codec": "file:../cesr-codec"
   },
   "devDependencies": {
     "tsup": "^8.0.0",
