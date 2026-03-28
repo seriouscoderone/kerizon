@@ -1,0 +1,30 @@
+{
+  "name": "@kerizon/kli-conformance",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Implementation-agnostic KERI CLI conformance test harness",
+  "license": "Apache-2.0",
+  "scripts": {
+    "test": "vitest run",
+    "test:t1": "vitest run tests/t1-cesr/",
+    "test:t2": "vitest run tests/t2-event-invariants/",
+    "test:t3": "vitest run tests/t3-protocol-flows/",
+    "test:z3": "vitest run tests/z3/",
+    "test:model": "vitest run tests/model/",
+    "test:watch": "vitest watch",
+    "build": "tsup src/index.ts --format esm --dts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "fast-check": "^3.22.0",
+    "z3-solver": "^4.13.0"
+  },
+  "devDependencies": {
+    "@noble/ed25519": "^2.2.0",
+    "@noble/hashes": "^1.7.0",
+    "@types/node": "^25.5.0",
+    "tsup": "^8.5.0",
+    "typescript": "^5.7.0",
+    "vitest": "^3.1.0"
+  }
+}
