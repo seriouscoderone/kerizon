@@ -5,7 +5,7 @@
  * Output format matches kli (keripy) so the kli-conformance harness can test it.
  */
 
-import { existsSync, mkdirSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import {
@@ -17,6 +17,7 @@ import {
   CtrDex,
   encodeB64,
   b64Index,
+  parseStream,
 } from '@kerizon/cesr';
 import {
   incept,
@@ -582,6 +583,78 @@ async function cmdEvent(flags: Record<string, string[]>): Promise<void> {
   }
 }
 
+async function cmdImport(flags: Record<string, string[]>): Promise<void> {
+  const name = getFlag(flags, 'name');
+  const file = getFlag(flags, 'file');
+  if (!name) {
+    process.stderr.write('Error: --name is required\n');
+    process.exit(1);
+  }
+  if (!file) {
+    process.stderr.write('Error: --file is required\n');
+    process.exit(1);
+  }
+
+  if (!existsSync(file)) {
+    process.stderr.write(`Error: file not found: ${file}\n`);
+    process.exit(1);
+  }
+
+  const store = loadStore(name);
+  const data = readFileSync(file);
+  const messages = parseStream(new Uint8Array(data));
+
+  if (messages.length === 0) {
+    process.stderr.write('Error: no messages found in CESR stream\n');
+    process.exit(1);
+  }
+
+  let importedCount = 0;
+
+  for (const msg of messages) {
+    const serder = msg.serder;
+    const prefix = serder.pre;
+    const ilk = serder.ilk;
+    const sigQb64s = msg.sigers.map(s => s.qb64);
+
+    if (ilk === 'icp' || ilk === 'dip') {
+      // Inception event -- create a new Kever
+      const kever = Kever.fromInception(serder);
+      store.appendEvent(prefix, serder, sigQb64s);
+      store.putKever(prefix, kever);
+    } else if (ilk === 'rot' || ilk === 'drt') {
+      // Establishment event -- apply to existing Kever
+      const kever = store.getKever(prefix);
+      if (!kever) {
+        process.stderr.write(`Warning: no existing key state for prefix "${prefix}" at sn=${serder.sn}, skipping\n`);
+        continue;
+      }
+      const newKever = kever.applyEstablishment(serder);
+      store.appendEvent(prefix, serder, sigQb64s);
+      store.putKever(prefix, newKever);
+    } else if (ilk === 'ixn') {
+      // Interaction event -- apply to existing Kever
+      const kever = store.getKever(prefix);
+      if (!kever) {
+        process.stderr.write(`Warning: no existing key state for prefix "${prefix}" at sn=${serder.sn}, skipping\n`);
+        continue;
+      }
+      const newKever = kever.applyInteraction(serder);
+      store.appendEvent(prefix, serder, sigQb64s);
+      store.putKever(prefix, newKever);
+    } else {
+      // Unknown event type -- store it but don't update key state
+      store.appendEvent(prefix, serder, sigQb64s);
+    }
+
+    importedCount++;
+  }
+
+  saveStore(name, store);
+
+  process.stdout.write(`Imported ${importedCount} events from ${file}\n`);
+}
+
 function cmdVersion(): void {
   process.stdout.write('Library version: 0.1.0\n');
 }
@@ -620,6 +693,9 @@ async function main(): Promise<void> {
       case 'export':
         await cmdExport(flags);
         break;
+      case 'import':
+        await cmdImport(flags);
+        break;
       case 'event':
         await cmdEvent(flags);
         break;
@@ -629,7 +705,7 @@ async function main(): Promise<void> {
       default:
         process.stderr.write(`Unknown command: ${command}\n`);
         process.stderr.write('Usage: kerizon <command> [options]\n');
-        process.stderr.write('Commands: init, incept, rotate, interact, status, sign, verify, list, export, event, version\n');
+        process.stderr.write('Commands: init, incept, rotate, interact, status, sign, verify, list, export, import, event, version\n');
         process.exit(1);
     }
   } catch (err: unknown) {

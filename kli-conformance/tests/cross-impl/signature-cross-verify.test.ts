@@ -124,11 +124,25 @@ describe.skipIf(!KLI_AVAILABLE)('cross-impl signature verification', () => {
       kliSigs = result.signatures!;
     });
 
-    // kerizon importKel not implemented -- downstream verification blocked
-    it.todo('step B3: kli exports KEL -> kerizon imports (blocked: importKel not implemented)');
+    it('step B3: kli exports KEL -> kerizon imports', async () => {
+      const exported = await kli.exportKel('kli-signer');
+      expect(exported.exitCode).toBe(0);
+      expect(exported.cesr).toBeTruthy();
 
-    it.todo('step B4: kerizon verifies kli signature -> valid=true');
+      const imported = await kerizon.importKel(exported.cesr!);
+      expect(imported.exitCode).toBe(0);
+    });
 
-    it.todo('step B5: kerizon rejects tampered text -> valid=false');
+    it('step B4: kerizon verifies kli signature -> valid=true', async () => {
+      const result = await kerizon.verify(kliPrefix, SIGN_TEXT, kliSigs);
+      expect(result.exitCode).toBe(0);
+      expect(result.valid).toBe(true);
+    });
+
+    it('step B5: kerizon rejects tampered text -> valid=false', async () => {
+      const result = await kerizon.verify(kliPrefix, TAMPERED_TEXT, kliSigs);
+      // Either valid=false or non-zero exit code means rejection
+      expect(result.valid === false || result.exitCode !== 0).toBe(true);
+    });
   });
 });

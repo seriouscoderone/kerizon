@@ -29,3 +29,5 @@ export type { SerializationKind } from './codec.js';
 export { makeVersionString, parseVersionString } from './composition/version-string.js';
 export type { VersionInfo } from './composition/version-string.js';
 export { Serder } from './composition/serder.js';
+export { parseStream } from './composition/parser.js';
+export type { ParsedMessage } from './composition/parser.js';

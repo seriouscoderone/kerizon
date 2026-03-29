@@ -18,6 +18,7 @@ import type {
   WitnessHandle,
 } from './types.js';
 import { execCli, execCliBinary } from '../harness/cli-executor.js';
+import { createTempEnv, type TempEnv } from '../harness/temp-env.js';
 import {
   parsePrefix,
   parseNewSeqNo,
@@ -52,12 +53,20 @@ export class KerizonAdapter implements CliAdapter {
   private readonly useNode: boolean;
   private readonly keystoreName: string;
   private readonly timeout: number;
+  private tempEnv?: TempEnv;
 
   constructor(opts: KerizonAdapterOptions) {
     this.cliPath = opts.cliPath ?? 'kerizon';
     this.useNode = opts.useNode ?? false;
     this.keystoreName = opts.keystoreName;
     this.timeout = opts.timeout ?? 30_000;
+  }
+
+  private async ensureTempEnv(): Promise<TempEnv> {
+    if (!this.tempEnv) {
+      this.tempEnv = await createTempEnv('kerizon-adapter-');
+    }
+    return this.tempEnv;
   }
 
   private run(args: string[]): Promise<CliResult> {
@@ -147,9 +156,10 @@ export class KerizonAdapter implements CliAdapter {
     return { ...result, cesr };
   }
 
-  async importKel(_cesrBytes: Uint8Array): Promise<CliResult> {
-    // Import not yet implemented in kerizon CLI
-    return { exitCode: 1, stdout: '', stderr: 'Not implemented', durationMs: 0 };
+  async importKel(cesrBytes: Uint8Array): Promise<CliResult> {
+    const tempEnv = await this.ensureTempEnv();
+    const cesrPath = await tempEnv.writeBinary('import.cesr', cesrBytes);
+    return this.run(['import', ...this.keystoreArgs(), '--file', cesrPath]);
   }
 
   async exportEvents(alias: string): Promise<CliResult & { events?: KelEvent[] }> {
