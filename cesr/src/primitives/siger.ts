@@ -174,22 +174,35 @@ export class Siger {
       ondex = decodeSoft(full, sizage.hs + indexChars, sizage.os);
     }
 
-    // Decode raw signature bytes
-    const valueB64 = full.substring(sizage.hs + sizage.ss);
-    const decoded = decodeB64(valueB64);
+    // Decode full B-domain bytes (replace code+soft with zero padding)
+    const zeroPad = 'A'.repeat(sizage.hs + sizage.ss);
+    const fullB64 = zeroPad + full.substring(sizage.hs + sizage.ss);
+    const fullBytes = decodeB64(fullB64);
 
-    // Compute expected raw size: same logic as Matter but no ls for indexer
-    const valueChars = sizage.fs - sizage.hs - sizage.ss;
-    const totalBytes = Math.floor((valueChars * 3) / 4);
-    const expectedRaw = totalBytes - sizage.ls;
-    const padLen = decoded.length - expectedRaw;
-    const raw = decoded.slice(padLen);
+    // Raw is right-aligned. Total bytes = fs*3/4.
+    // Pad bytes = total - raw. We know raw size from the sig algorithm:
+    // For Ed25519 (64 bytes), ECDSA (64 bytes), Ed448 (114 bytes).
+    const totalBytes = (sizage.fs * 3) / 4;
+    // Raw size = totalBytes - leading pad (which includes ls + alignment pad)
+    // Simplest: same formula as Matter. fs chars encode totalBytes bytes.
+    // The code+soft region occupies (hs+ss)*6 bits in the B-domain.
+    // The raw starts after the pad. We know pad = totalBytes - rawSize.
+    // rawSize for sigs: Ed25519=64, ECDSA=64, Ed448=114.
+    // Formula: rawSize = totalBytes - ls - floor((hs+ss)*6/8)... no, simpler:
+    // rawSize = totalBytes - (totalBytes - floor((fs - hs - ss) * 3/4)) - ls
+    // = floor((fs - hs - ss) * 3/4) - ls
+    const rawSize = Math.floor(((sizage.fs - sizage.hs - sizage.ss) * 3) / 4) - sizage.ls;
+    const raw = fullBytes.slice(fullBytes.length - rawSize);
 
     return new Siger(code, raw, index, ondex, full);
   }
 
   /**
    * Encode to qb64.
+   *
+   * Like Matter, the entire qb64 is a contiguous B64 stream.
+   * The code + soft chars replace the first (hs+ss) chars of
+   * the full B64 encoding.
    */
   private static _infil(
     code: string,
@@ -205,15 +218,15 @@ export class Siger {
       soft += encodeSoft(ondex, sizage.os);
     }
 
-    // Pad raw and encode to B64
-    const valueChars = sizage.fs - sizage.hs - sizage.ss;
-    const totalValueBytes = Math.floor((valueChars * 3) / 4);
-    const padLen = totalValueBytes - raw.length;
-    const padded = new Uint8Array(totalValueBytes);
-    padded.set(raw, padLen);
+    // Encode full buffer: total bytes = fs * 3 / 4, raw right-aligned
+    const totalBytes = (sizage.fs * 3) / 4;
+    const padLen = totalBytes - raw.length;
+    const full = new Uint8Array(totalBytes);
+    full.set(raw, padLen);
 
-    const valueB64 = encodeB64(padded);
+    const fullB64 = encodeB64(full);
 
-    return code + soft + valueB64;
+    // Replace first (hs + ss) chars with code + soft
+    return code + soft + fullB64.substring(sizage.hs + sizage.ss);
   }
 }
