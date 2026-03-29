@@ -243,21 +243,45 @@ export class KerizonAdapter implements CliAdapter {
     return { ...result, identifiers };
   }
 
-  // ── Credential lifecycle (not implemented) ──
+  // ── Credential lifecycle ──
 
-  async vcRegistryIncept(_alias: string, _registryName: string): Promise<CliResult> {
-    return { exitCode: 1, stdout: '', stderr: 'Not implemented', durationMs: 0 };
+  async vcRegistryIncept(alias: string, registryName: string): Promise<CliResult> {
+    const args = [
+      'vc', 'registry', 'incept',
+      ...this.keystoreArgs(),
+      '--alias', alias,
+      '--registry-name', registryName,
+    ];
+    return this.run(args);
   }
 
-  async vcCreate(_opts: {
+  async vcCreate(opts: {
     alias: string; registryName: string; schema: string;
     data: Record<string, unknown>; recipient?: string;
   }): Promise<CliResult & { said?: string }> {
-    return { exitCode: 1, stdout: '', stderr: 'Not implemented', durationMs: 0 };
+    const tempEnv = await this.ensureTempEnv();
+    const dataPath = await tempEnv.writeFile('vc-data.json', JSON.stringify(opts.data));
+    const args = [
+      'vc', 'create',
+      ...this.keystoreArgs(),
+      '--alias', opts.alias,
+      '--registry-name', opts.registryName,
+      '--schema', opts.schema,
+      '--data', `@${dataPath}`,
+    ];
+    const result = await this.run(args);
+    const saidMatch = result.stdout.match(/Credential SAID:\s*(\S+)/);
+    const said = saidMatch?.[1];
+    return { ...result, said };
   }
 
-  async vcList(_alias: string): Promise<CliResult> {
-    return { exitCode: 1, stdout: '', stderr: 'Not implemented', durationMs: 0 };
+  async vcList(alias: string): Promise<CliResult> {
+    const args = [
+      'vc', 'list',
+      ...this.keystoreArgs(),
+      '--alias', alias,
+    ];
+    return this.run(args);
   }
 
   async vcRevoke(_alias: string, _said: string): Promise<CliResult> {

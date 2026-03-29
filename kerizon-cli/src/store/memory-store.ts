@@ -41,11 +41,26 @@ interface SerializedIdentity {
   nextSignerQb64s: string[];
 }
 
+export interface SerializedRegistry {
+  said: string;
+  name: string;
+  events: string[];  // serialized TEL event SAIDs
+}
+
+export interface SerializedCredential {
+  said: string;
+  registrySaid: string;
+  state: string;
+  raw: string;  // JSON string of the ACDC
+}
+
 interface StoreData {
   events: Record<string, SerializedEvent[]>;   // prefix → events
   kevers: Record<string, SerializedKever>;     // prefix → kever snapshot
   aliases: Record<string, string>;             // alias → prefix
   identities: Record<string, SerializedIdentity>; // prefix → signing keys
+  registries: Record<string, SerializedRegistry>;  // registry name → metadata
+  credentials: Record<string, SerializedCredential>; // credential SAID → data
 }
 
 // ── Store interface ───────────────────────────────────────────────
@@ -64,6 +79,14 @@ export interface Store {
   setSigners(prefix: string, alias: string, currentQb64s: string[], nextQb64s: string[]): void;
   getIdentity(prefix: string): SerializedIdentity | undefined;
 
+  putRegistry(name: string, registry: SerializedRegistry): void;
+  getRegistry(name: string): SerializedRegistry | undefined;
+  listRegistries(): SerializedRegistry[];
+
+  putCredential(said: string, credential: SerializedCredential): void;
+  getCredential(said: string): SerializedCredential | undefined;
+  listCredentials(): SerializedCredential[];
+
   save(path: string): void;
 }
 
@@ -74,6 +97,8 @@ export class MemoryStore implements Store {
   private kevers: Map<string, SerializedKever> = new Map();
   private aliases: Map<string, string> = new Map();
   private identities: Map<string, SerializedIdentity> = new Map();
+  private registries: Map<string, SerializedRegistry> = new Map();
+  private credentials: Map<string, SerializedCredential> = new Map();
 
   appendEvent(prefix: string, serder: Serder, sigs: string[]): void {
     if (!this.events.has(prefix)) {
@@ -149,6 +174,30 @@ export class MemoryStore implements Store {
     return this.identities.get(prefix);
   }
 
+  putRegistry(name: string, registry: SerializedRegistry): void {
+    this.registries.set(name, registry);
+  }
+
+  getRegistry(name: string): SerializedRegistry | undefined {
+    return this.registries.get(name);
+  }
+
+  listRegistries(): SerializedRegistry[] {
+    return Array.from(this.registries.values());
+  }
+
+  putCredential(said: string, credential: SerializedCredential): void {
+    this.credentials.set(said, credential);
+  }
+
+  getCredential(said: string): SerializedCredential | undefined {
+    return this.credentials.get(said);
+  }
+
+  listCredentials(): SerializedCredential[] {
+    return Array.from(this.credentials.values());
+  }
+
   save(path: string): void {
     const dir = dirname(path);
     if (!existsSync(dir)) {
@@ -159,6 +208,8 @@ export class MemoryStore implements Store {
       kevers: Object.fromEntries(this.kevers),
       aliases: Object.fromEntries(this.aliases),
       identities: Object.fromEntries(this.identities),
+      registries: Object.fromEntries(this.registries),
+      credentials: Object.fromEntries(this.credentials),
     };
     writeFileSync(path, JSON.stringify(data, null, 2), 'utf-8');
   }
@@ -181,6 +232,12 @@ export class MemoryStore implements Store {
     }
     for (const [k, v] of Object.entries(data.identities ?? {})) {
       store.identities.set(k, v);
+    }
+    for (const [k, v] of Object.entries(data.registries ?? {})) {
+      store.registries.set(k, v);
+    }
+    for (const [k, v] of Object.entries(data.credentials ?? {})) {
+      store.credentials.set(k, v);
     }
 
     return store;

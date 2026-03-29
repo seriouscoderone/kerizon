@@ -13,6 +13,7 @@ import {
   Siger,
   Verfer,
   Serder,
+  Saider,
   MtrDex,
   CtrDex,
   encodeB64,
@@ -26,17 +27,46 @@ import {
   Kever,
   TraitDex,
   computeNextDigest,
+  createRegistry,
+  createUpdate,
 } from '@kerizon/keri-core';
 import { MemoryStore } from './store/memory-store.js';
 
 // ── Arg parsing ───────────────────────────────────────────────────
 
+/**
+ * Multi-word commands supported by kerizon CLI.
+ * Longer commands are checked first so "vc registry incept" matches before "vc".
+ */
+const MULTI_WORD_COMMANDS = [
+  'vc registry incept',
+  'vc create',
+  'vc list',
+];
+
 function parseArgs(argv: string[]): { command: string; flags: Record<string, string[]> } {
   const args = argv.slice(2);
-  const command = args[0] ?? '';
   const flags: Record<string, string[]> = {};
 
-  let i = 1;
+  // Try multi-word commands first (longest match wins)
+  let command = '';
+  let flagStart = 1;
+
+  for (const mc of MULTI_WORD_COMMANDS) {
+    const words = mc.split(' ');
+    const matches = words.every((w, idx) => args[idx] === w);
+    if (matches && words.length > flagStart - 1) {
+      command = mc;
+      flagStart = words.length;
+    }
+  }
+
+  if (!command) {
+    command = args[0] ?? '';
+    flagStart = 1;
+  }
+
+  let i = flagStart;
   while (i < args.length) {
     const arg = args[i];
     if (arg.startsWith('--')) {
@@ -655,6 +685,237 @@ async function cmdImport(flags: Record<string, string[]>): Promise<void> {
   process.stdout.write(`Imported ${importedCount} events from ${file}\n`);
 }
 
+async function cmdVcRegistryIncept(flags: Record<string, string[]>): Promise<void> {
+  const name = getFlag(flags, 'name');
+  const alias = getFlag(flags, 'alias');
+  const registryName = getFlag(flags, 'registry-name');
+  if (!name || !alias || !registryName) {
+    process.stderr.write('Error: --name, --alias, and --registry-name are required\n');
+    process.exit(1);
+  }
+
+  const store = loadStore(name);
+  const prefix = store.getPrefix(alias);
+  if (!prefix) {
+    process.stderr.write(`Error: alias "${alias}" not found\n`);
+    process.exit(1);
+  }
+
+  const kever = store.getKever(prefix);
+  if (!kever) {
+    process.stderr.write(`Error: no key state for prefix "${prefix}"\n`);
+    process.exit(1);
+  }
+
+  const identity = store.getIdentity(prefix);
+  if (!identity) {
+    process.stderr.write(`Error: no identity data for prefix "${prefix}"\n`);
+    process.exit(1);
+  }
+
+  // Create the registry inception event
+  const regSerder = createRegistry({ issuerAid: prefix });
+  const regSaid = regSerder.said;
+
+  // Store the registry
+  store.putRegistry(registryName, {
+    said: regSaid,
+    name: registryName,
+    events: [regSaid],
+  });
+
+  // Create an interaction event anchoring the registry seal
+  const newSn = kever.sn + 1;
+  const events = store.getEvents(prefix);
+  const lastEvent = events[events.length - 1];
+  const priorDigest = lastEvent.serder.said;
+
+  const ixnSerder = interact({
+    prefix,
+    priorDigest,
+    sn: newSn,
+    data: [{ i: regSaid, s: '0', d: regSaid }],
+  });
+
+  // Sign with current keys
+  const currentSigners = identity.currentSignerQb64s.map(
+    qb64 => new Signer({ qb64 }),
+  );
+
+  const sigers: Siger[] = [];
+  for (let i = 0; i < currentSigners.length; i++) {
+    const sigBytes = await currentSigners[i].sign(ixnSerder.raw);
+    sigers.push(Siger.create({ raw: sigBytes, index: i }));
+  }
+
+  const sigQb64s = sigers.map(s => s.qb64);
+
+  store.appendEvent(prefix, ixnSerder, sigQb64s);
+  const newKever = kever.applyInteraction(ixnSerder);
+  store.putKever(prefix, newKever);
+  saveStore(name, store);
+
+  process.stdout.write(`Registry SAID: ${regSaid}\n`);
+}
+
+async function cmdVcCreate(flags: Record<string, string[]>): Promise<void> {
+  const name = getFlag(flags, 'name');
+  const alias = getFlag(flags, 'alias');
+  const registryName = getFlag(flags, 'registry-name');
+  const schema = getFlag(flags, 'schema');
+  const dataFlag = getFlag(flags, 'data');
+  if (!name || !alias || !registryName || !schema || !dataFlag) {
+    process.stderr.write('Error: --name, --alias, --registry-name, --schema, and --data are required\n');
+    process.exit(1);
+  }
+
+  const store = loadStore(name);
+  const prefix = store.getPrefix(alias);
+  if (!prefix) {
+    process.stderr.write(`Error: alias "${alias}" not found\n`);
+    process.exit(1);
+  }
+
+  const kever = store.getKever(prefix);
+  if (!kever) {
+    process.stderr.write(`Error: no key state for prefix "${prefix}"\n`);
+    process.exit(1);
+  }
+
+  const identity = store.getIdentity(prefix);
+  if (!identity) {
+    process.stderr.write(`Error: no identity data for prefix "${prefix}"\n`);
+    process.exit(1);
+  }
+
+  const registry = store.getRegistry(registryName);
+  if (!registry) {
+    process.stderr.write(`Error: registry "${registryName}" not found\n`);
+    process.exit(1);
+  }
+
+  // Read data from file (strip leading @) or parse as JSON
+  let data: Record<string, unknown>;
+  if (dataFlag.startsWith('@')) {
+    const filePath = dataFlag.slice(1);
+    if (!existsSync(filePath)) {
+      process.stderr.write(`Error: data file not found: ${filePath}\n`);
+      process.exit(1);
+    }
+    data = JSON.parse(readFileSync(filePath, 'utf-8'));
+  } else {
+    data = JSON.parse(dataFlag);
+  }
+
+  // Build ACDC and SAIDify
+  const acdcTemplate: Record<string, unknown> = {
+    v: 'ACDC10JSON000000_',
+    d: '',
+    i: prefix,
+    s: schema,
+    a: data,
+  };
+  const acdc = Saider.saidify(acdcTemplate);
+  const credSaid = acdc['d'] as string;
+
+  // Compute the ACDC raw size for the version string
+  const acdcRaw = JSON.stringify(acdc);
+  const acdcSize = new TextEncoder().encode(acdcRaw).length;
+  const sizeHex = acdcSize.toString(16).padStart(6, '0');
+  acdc['v'] = `ACDC10JSON${sizeHex}_`;
+  // Re-saidify after version string update
+  const finalAcdc = Saider.saidify(acdc);
+  const finalCredSaid = finalAcdc['d'] as string;
+  const finalAcdcRaw = JSON.stringify(finalAcdc);
+
+  // Create TEL update event for issuance
+  const lastTelEventSaid = registry.events[registry.events.length - 1];
+  const telSn = registry.events.length;
+  const telSerder = createUpdate({
+    registrySaid: registry.said,
+    credentialSaid: finalCredSaid,
+    priorSaid: lastTelEventSaid,
+    sn: telSn,
+    targetState: 'Issued',
+  });
+
+  // Update registry events
+  registry.events.push(telSerder.said);
+  store.putRegistry(registryName, registry);
+
+  // Store the credential
+  store.putCredential(finalCredSaid, {
+    said: finalCredSaid,
+    registrySaid: registry.said,
+    state: 'Issued',
+    raw: finalAcdcRaw,
+  });
+
+  // Create an interaction event anchoring the TEL update seal
+  const newSn = kever.sn + 1;
+  const events = store.getEvents(prefix);
+  const lastEvent = events[events.length - 1];
+  const priorDigest = lastEvent.serder.said;
+
+  const ixnSerder = interact({
+    prefix,
+    priorDigest,
+    sn: newSn,
+    data: [{ i: registry.said, s: telSn.toString(16), d: telSerder.said }],
+  });
+
+  // Sign with current keys
+  const currentSigners = identity.currentSignerQb64s.map(
+    qb64 => new Signer({ qb64 }),
+  );
+
+  const sigers: Siger[] = [];
+  for (let i = 0; i < currentSigners.length; i++) {
+    const sigBytes = await currentSigners[i].sign(ixnSerder.raw);
+    sigers.push(Siger.create({ raw: sigBytes, index: i }));
+  }
+
+  const sigQb64s = sigers.map(s => s.qb64);
+
+  store.appendEvent(prefix, ixnSerder, sigQb64s);
+  const newKever = kever.applyInteraction(ixnSerder);
+  store.putKever(prefix, newKever);
+  saveStore(name, store);
+
+  process.stdout.write(`Credential SAID: ${finalCredSaid}\n`);
+}
+
+async function cmdVcList(flags: Record<string, string[]>): Promise<void> {
+  const name = getFlag(flags, 'name');
+  const alias = getFlag(flags, 'alias');
+  if (!name || !alias) {
+    process.stderr.write('Error: --name and --alias are required\n');
+    process.exit(1);
+  }
+
+  const store = loadStore(name);
+  const prefix = store.getPrefix(alias);
+  if (!prefix) {
+    process.stderr.write(`Error: alias "${alias}" not found\n`);
+    process.exit(1);
+  }
+
+  const credentials = store.listCredentials();
+  // Filter to credentials issued by this alias (issuer prefix matches)
+  const mine = credentials.filter(c => {
+    try {
+      const parsed = JSON.parse(c.raw);
+      return parsed['i'] === prefix;
+    } catch {
+      return false;
+    }
+  });
+
+  for (const cred of mine) {
+    process.stdout.write(`${cred.said} ${cred.state}\n`);
+  }
+}
+
 function cmdVersion(): void {
   process.stdout.write('Library version: 0.1.0\n');
 }
@@ -699,13 +960,22 @@ async function main(): Promise<void> {
       case 'event':
         await cmdEvent(flags);
         break;
+      case 'vc registry incept':
+        await cmdVcRegistryIncept(flags);
+        break;
+      case 'vc create':
+        await cmdVcCreate(flags);
+        break;
+      case 'vc list':
+        await cmdVcList(flags);
+        break;
       case 'version':
         cmdVersion();
         break;
       default:
         process.stderr.write(`Unknown command: ${command}\n`);
         process.stderr.write('Usage: kerizon <command> [options]\n');
-        process.stderr.write('Commands: init, incept, rotate, interact, status, sign, verify, list, export, import, event, version\n');
+        process.stderr.write('Commands: init, incept, rotate, interact, status, sign, verify, list, export, import, event, vc registry incept, vc create, vc list, version\n');
         process.exit(1);
     }
   } catch (err: unknown) {
