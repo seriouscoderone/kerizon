@@ -4,6 +4,9 @@
 
 export { Matter, encodeB64, decodeB64, b64Index, b64Value, resolveCode, rawSizeFromSizage } from './primitives/matter.js';
 export type { MatterArgs } from './primitives/matter.js';
+export { Verfer } from './primitives/verfer.js';
+export { Diger } from './primitives/diger.js';
+export { Signer } from './primitives/signer.js';
 export {
   MtrDex, MtrSizage,
   IdrDex, IdrSizage, IdxSigDex, IdxSigSizage,
