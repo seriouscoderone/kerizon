@@ -19,6 +19,8 @@ export type {
   WitnessHandle,
 } from './adapter/types.js';
 export { KliAdapter, detectKli, DEMO_WITNESSES } from './adapter/kli-adapter.js';
+export { KerizonAdapter } from './adapter/kerizon-adapter.js';
+export type { KerizonAdapterOptions } from './adapter/kerizon-adapter.js';
 
 // ── Generators ──
 export {
