@@ -52,3 +52,16 @@ export type { DelegatedInceptionConfig, DelegationSeal } from './delegation/type
 export { createReceipt, classifyReceipt } from './receipting/create.js';
 export type { CreateReceiptOpts } from './receipting/create.js';
 export type { Receipt, ReceiptType } from './receipting/types.js';
+
+export { buildApply, buildOffer, buildAgree, buildGrant, buildAdmit, buildSpurn } from './credential-exchange/ipex.js';
+export { NegotiationStateMachine } from './credential-exchange/thread.js';
+export { NegotiationState, IPEX_ROUTES, VALID_TRANSITIONS } from './credential-exchange/types.js';
+export type {
+  IpexRoute,
+  ApplyConfig,
+  OfferConfig,
+  AgreeConfig,
+  GrantConfig,
+  AdmitConfig,
+  SpurnConfig,
+} from './credential-exchange/types.js';
