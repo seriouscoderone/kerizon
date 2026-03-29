@@ -75,3 +75,12 @@ export type { CredentialState, CredentialStatus } from './credential-lifecycle/t
 export { detectFork, isForked } from './evidence/detect.js';
 export type { EventRef } from './evidence/detect.js';
 export type { ForkDetected } from './evidence/types.js';
+
+export { KERL } from './accountability/kerl.js';
+export type { ReceiptRef } from './accountability/kerl.js';
+export { checkAccountability, ample } from './accountability/kawa.js';
+export type { AccountabilityResult } from './accountability/kawa.js';
+
+export { verifyCredentialArtifacts, verifyProofChain } from './credential-proof/verify.js';
+export type { CredentialArtifacts, ProofChain } from './credential-proof/verify.js';
+export type { ProofResult, RegistryState } from './credential-proof/types.js';
