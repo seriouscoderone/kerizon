@@ -20,3 +20,9 @@ export {
   DIP_FIELDS,
   DRT_FIELDS,
 } from './events/types.js';
+
+export { computeNextDigest, verifyPreRotation } from './key-commitment/pre-rotation.js';
+export { isTransferable, isTransferableCode } from './key-commitment/transferability.js';
+
+export { Kever } from './state/kever.js';
+export { TraitDex } from './state/traits.js';
