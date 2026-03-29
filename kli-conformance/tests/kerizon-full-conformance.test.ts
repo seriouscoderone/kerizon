@@ -836,17 +836,14 @@ describe('kerizon full conformance -- validation pipeline', () => {
     expect(init.exitCode).toBe(0);
   });
 
-  // KNOWN GAP: kerizon import does not yet validate sn == 0 for inception events.
-  // This test documents the expected behavior for future implementation.
-  it.fails('import inception with sn != 0 is rejected', async () => {
+  it('import inception with sn != 0 is rejected', async () => {
     const malformed = craftMalformedInception({ wrongSn: 5 });
     const cesr = serializeEvent(malformed);
     const r = await adapter.importKel(cesr);
     expect(r.exitCode).not.toBe(0);
   });
 
-  // KNOWN GAP: kerizon import does not yet reject orphan rotation events.
-  it.fails('import event for unknown prefix that is not inception is rejected', async () => {
+  it('import event for unknown prefix that is not inception is rejected', async () => {
     const unknownPrefix = 'DZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZz';
     const orphan = craftOrphanRotation(unknownPrefix);
     const cesr = serializeEvent(orphan);
@@ -1021,8 +1018,7 @@ describe('kerizon full conformance -- inception lifecycle', () => {
     expect(icp['i']).toBe(icp['d']);
   });
 
-  // KNOWN GAP: kerizon does not yet enforce non-transferable rotation rejection.
-  it.fails('non-transferable inception cannot rotate', async () => {
+  it('non-transferable inception cannot rotate', async () => {
     const r = await adapter.incept({
       alias: 'bob-nt',
       transferable: false,
@@ -1104,8 +1100,7 @@ describe('kerizon full conformance -- rotation lifecycle', () => {
     expect(checkAllFirstSeenInvariants(events).valid).toBe(true);
   });
 
-  // KNOWN GAP: kerizon rotate does not yet support --ncount/--nsith overrides.
-  it.fails('rotation with next-count changes future key count', async () => {
+  it('rotation with next-count changes future key count', async () => {
     const r = await adapter.rotate({ alias: 'rotator', nextKeyCount: 3, nextThreshold: '2' });
     expect(r.exitCode).toBe(0);
 

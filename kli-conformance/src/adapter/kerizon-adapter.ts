@@ -129,6 +129,8 @@ export class KerizonAdapter implements CliAdapter {
 
   async rotate(config: RotateConfig): Promise<CliResult> {
     const args = ['rotate', ...this.keystoreArgs(), '--alias', config.alias];
+    if (config.nextKeyCount != null) args.push('--next-count', String(config.nextKeyCount));
+    if (config.nextThreshold) args.push('--nsith', config.nextThreshold);
     return this.run(args);
   }
 

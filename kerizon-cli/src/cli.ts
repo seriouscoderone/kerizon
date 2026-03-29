@@ -157,9 +157,14 @@ async function cmdIncept(flags: Record<string, string[]>): Promise<void> {
 
   const transferable = hasFlag(flags, 'transferable');
   const icount = getIntFlag(flags, 'icount', 1);
-  const ncount = getIntFlag(flags, 'ncount', transferable ? 1 : 0);
+  let ncount = getIntFlag(flags, 'ncount', transferable ? 1 : 0);
   const isith = getFlag(flags, 'isith') ?? '1';
-  const nsith = getFlag(flags, 'nsith') ?? '1';
+  let nsith = getFlag(flags, 'nsith') ?? '1';
+
+  if (!transferable) {
+    ncount = 0;  // no next keys for non-transferable
+    nsith = '0';
+  }
   const estOnly = hasFlag(flags, 'est-only');
   const delpre = getFlag(flags, 'delpre');
 
@@ -262,7 +267,8 @@ async function cmdRotate(flags: Record<string, string[]>): Promise<void> {
   const currentKeys = currentSigners.map(s => s.verfer.qb64);
 
   // Generate new next keys
-  const ncount = currentSigners.length;
+  const ncount = getIntFlag(flags, 'next-count', currentSigners.length);
+  const nsith = getFlag(flags, 'nsith') ?? kever.nextThreshold;
   const nextSigners: Signer[] = [];
   const nextDigests: string[] = [];
   for (let i = 0; i < ncount; i++) {
@@ -280,7 +286,7 @@ async function cmdRotate(flags: Record<string, string[]>): Promise<void> {
     keys: currentKeys,
     nextDigests,
     signingThreshold: kever.signingThreshold,
-    nextThreshold: kever.nextThreshold,
+    nextThreshold: nsith,
     witnessThreshold: kever.witnessThreshold,
   });
 
@@ -649,6 +655,9 @@ async function cmdImport(flags: Record<string, string[]>): Promise<void> {
 
     if (ilk === 'icp' || ilk === 'dip') {
       // Inception event -- create a new Kever
+      if (serder.sn !== 0) {
+        throw new Error(`Inception event must have sn=0, got sn=${serder.sn}`);
+      }
       const kever = Kever.fromInception(serder);
       store.appendEvent(prefix, serder, sigQb64s);
       store.putKever(prefix, kever);
@@ -656,8 +665,7 @@ async function cmdImport(flags: Record<string, string[]>): Promise<void> {
       // Establishment event -- apply to existing Kever
       const kever = store.getKever(prefix);
       if (!kever) {
-        process.stderr.write(`Warning: no existing key state for prefix "${prefix}" at sn=${serder.sn}, skipping\n`);
-        continue;
+        throw new Error(`No key state for prefix ${prefix} — cannot apply ${ilk} without prior inception`);
       }
       const newKever = kever.applyEstablishment(serder);
       store.appendEvent(prefix, serder, sigQb64s);
@@ -666,8 +674,7 @@ async function cmdImport(flags: Record<string, string[]>): Promise<void> {
       // Interaction event -- apply to existing Kever
       const kever = store.getKever(prefix);
       if (!kever) {
-        process.stderr.write(`Warning: no existing key state for prefix "${prefix}" at sn=${serder.sn}, skipping\n`);
-        continue;
+        throw new Error(`No key state for prefix ${prefix} — cannot apply ixn without prior inception`);
       }
       const newKever = kever.applyInteraction(serder);
       store.appendEvent(prefix, serder, sigQb64s);
