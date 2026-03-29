@@ -31,3 +31,20 @@ export { checkDualThreshold } from './thresholds/dual-threshold.js';
 export type { DualThresholdResult } from './thresholds/types.js';
 export { buildWitnessConfig, applyWitnessChanges, enoughReceipts } from './thresholds/witness-config.js';
 export type { WitnessConfiguration } from './thresholds/witness-config.js';
+
+export { exchange } from './messaging/exchange.js';
+export { query } from './messaging/query.js';
+export { reply } from './messaging/reply.js';
+export type {
+  MessageType,
+  ExchangeConfig,
+  QueryConfig,
+  ReplyConfig,
+} from './messaging/types.js';
+
+export { createDuplicityStatus } from './watcher/types.js';
+export type { DuplicityStatus, WatcherPort } from './watcher/types.js';
+
+export { createDelegatedInception, createDelegationSeal } from './delegation/create.js';
+export { verifyDelegationSeal, findDelegationSeal } from './delegation/verify.js';
+export type { DelegatedInceptionConfig, DelegationSeal } from './delegation/types.js';
