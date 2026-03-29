@@ -113,3 +113,8 @@ export type {
   BadaTier,
   BadaRecord,
 } from './discovery/types.js';
+
+export { EscrowStore } from './identity/escrow.js';
+export { processEvent } from './identity/process.js';
+export type { KeverStore } from './identity/process.js';
+export type { EscrowType, EscrowedEvent, ProcessResult } from './identity/types.js';
