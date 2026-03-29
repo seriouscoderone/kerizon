@@ -100,3 +100,16 @@ export type { AccountabilityResult } from './accountability/kawa.js';
 export { verifyCredentialArtifacts, verifyProofChain } from './credential-proof/verify.js';
 export type { CredentialArtifacts, ProofChain } from './credential-proof/verify.js';
 export type { ProofResult, RegistryState } from './credential-proof/types.js';
+
+export { parseOobi, formatOobi } from './discovery/oobi.js';
+export { shouldAccept } from './discovery/bada.js';
+export type {
+  OobiRole,
+  OobiParts,
+  EndRole,
+  LocationScheme,
+  ServiceEndpoint,
+  ResolvedEndpoint,
+  BadaTier,
+  BadaRecord,
+} from './discovery/types.js';
