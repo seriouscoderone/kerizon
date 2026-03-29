@@ -133,6 +133,62 @@ export interface CliAdapter {
   oobiGenerate(alias: string, role: string): Promise<CliResult & { oobis?: string[] }>;
   oobiResolve(oobi: string, alias?: string): Promise<CliResult>;
 
+  // ── Event inspection ──
+
+  event(alias: string, flags: {
+    said?: boolean;
+    sn?: boolean;
+    raw?: boolean;
+    json?: boolean;
+    seal?: boolean;
+  }): Promise<CliResult & {
+    said?: string;
+    sn?: number;
+    raw?: string;
+    json?: Record<string, unknown>;
+    seal?: { i: string; s: string; d: string };
+  }>;
+
+  list(): Promise<CliResult & { identifiers?: Array<{ name: string; prefix: string }> }>;
+
+  // ── Credential lifecycle ──
+
+  vcRegistryIncept(alias: string, registryName: string): Promise<CliResult>;
+  vcCreate(opts: {
+    alias: string;
+    registryName: string;
+    schema: string;
+    data: Record<string, unknown>;
+    recipient?: string;
+  }): Promise<CliResult & { said?: string }>;
+  vcList(alias: string): Promise<CliResult>;
+  vcRevoke(alias: string, said: string): Promise<CliResult>;
+
+  // ── Challenge-response ──
+
+  challengeGenerate(strength?: number): Promise<CliResult & { words?: string[] }>;
+  challengeRespond(opts: {
+    alias: string;
+    recipient: string;
+    words: string;
+  }): Promise<CliResult>;
+  challengeVerify(opts: {
+    alias: string;
+    signer: string;
+    words: string;
+  }): Promise<CliResult & { verified?: boolean }>;
+
+  // ── Delegation ──
+
+  delegateConfirm(alias: string, opts?: {
+    auto?: boolean;
+    interact?: boolean;
+  }): Promise<CliResult>;
+
+  // ── Escrow ──
+
+  escrowList(): Promise<CliResult>;
+
   // ── Witnesses ──
 
   witnessDemo(): Promise<WitnessHandle>;

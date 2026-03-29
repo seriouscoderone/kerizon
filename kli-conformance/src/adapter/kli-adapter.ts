@@ -33,6 +33,8 @@ import {
   parseOobiUrls,
   parseKeyState,
   parseVerboseEvents,
+  parseIdentifierList,
+  parseEventOutput,
 } from '../harness/result-parser.js';
 
 /** Well-known demo witness AIDs (from keripy witness/demo.py). */
@@ -287,6 +289,117 @@ export class KliAdapter implements CliAdapter {
     const args = ['--oobi', oobi];
     if (alias) args.push('--oobi-alias', alias);
     return this.run(['oobi', 'resolve'], args);
+  }
+
+  // ── Event inspection ──
+
+  async event(alias: string, flags: {
+    said?: boolean; sn?: boolean; raw?: boolean; json?: boolean; seal?: boolean;
+  }): Promise<CliResult & {
+    said?: string; sn?: number; raw?: string;
+    json?: Record<string, unknown>;
+    seal?: { i: string; s: string; d: string };
+  }> {
+    const args = ['--alias', alias];
+    if (flags.said) args.push('--said');
+    if (flags.sn) args.push('--sn');
+    if (flags.raw) args.push('--raw');
+    if (flags.json) args.push('--json');
+    if (flags.seal) args.push('--seal');
+
+    const result = await this.run(['event'], args);
+    const parsed = parseEventOutput(result.stdout, flags);
+    return { ...result, ...parsed };
+  }
+
+  async list(): Promise<CliResult & { identifiers?: Array<{ name: string; prefix: string }> }> {
+    const result = await this.run(['list'], []);
+    const identifiers = result.exitCode === 0 ? parseIdentifierList(result.stdout) : undefined;
+    return { ...result, identifiers };
+  }
+
+  // ── Credential lifecycle ──
+
+  async vcRegistryIncept(alias: string, registryName: string): Promise<CliResult> {
+    return this.run(['vc', 'registry', 'incept'], ['--alias', alias, '--registry-name', registryName]);
+  }
+
+  async vcCreate(opts: {
+    alias: string; registryName: string; schema: string;
+    data: Record<string, unknown>; recipient?: string;
+  }): Promise<CliResult & { said?: string }> {
+    const tempEnv = await this.ensureTempEnv();
+    const dataPath = await tempEnv.writeFile('vc-data.json', JSON.stringify(opts.data));
+    const args = [
+      '--alias', opts.alias,
+      '--registry-name', opts.registryName,
+      '--schema', opts.schema,
+      '--data', `@${dataPath}`,
+    ];
+    if (opts.recipient) args.push('--recipient', opts.recipient);
+    const result = await this.run(['vc', 'create'], args);
+    // kli vc create outputs the credential SAID
+    const saidMatch = result.stdout.match(/([A-Za-z0-9_-]{44})/);
+    return { ...result, said: saidMatch?.[1] };
+  }
+
+  async vcList(alias: string): Promise<CliResult> {
+    return this.run(['vc', 'list'], ['--alias', alias]);
+  }
+
+  async vcRevoke(alias: string, said: string): Promise<CliResult> {
+    return this.run(['vc', 'revoke'], ['--alias', alias, '--said', said]);
+  }
+
+  // ── Challenge-response ──
+
+  async challengeGenerate(strength?: number): Promise<CliResult & { words?: string[] }> {
+    const args: string[] = [];
+    if (strength) args.push('--strength', String(strength));
+    args.push('--out', 'json');
+    const result = await execCli(this.kli, ['challenge', 'generate', ...args], { timeout: this.timeout });
+    let words: string[] | undefined;
+    if (result.exitCode === 0) {
+      try { words = JSON.parse(result.stdout.trim()); } catch { /* ignore */ }
+    }
+    return { ...result, words };
+  }
+
+  async challengeRespond(opts: {
+    alias: string; recipient: string; words: string;
+  }): Promise<CliResult> {
+    return this.run(['challenge', 'respond'], [
+      '--alias', opts.alias,
+      '--recipient', opts.recipient,
+      '--words', opts.words,
+    ]);
+  }
+
+  async challengeVerify(opts: {
+    alias: string; signer: string; words: string;
+  }): Promise<CliResult & { verified?: boolean }> {
+    const result = await this.run(['challenge', 'verify'], [
+      '--signer', opts.signer,
+      '--words', opts.words,
+    ]);
+    return { ...result, verified: result.exitCode === 0 && /successfully responded/.test(result.stdout) };
+  }
+
+  // ── Delegation ──
+
+  async delegateConfirm(alias: string, opts?: {
+    auto?: boolean; interact?: boolean;
+  }): Promise<CliResult> {
+    const args = ['--alias', alias];
+    if (opts?.auto) args.push('--auto');
+    if (opts?.interact) args.push('--interact');
+    return this.run(['delegate', 'confirm'], args);
+  }
+
+  // ── Escrow ──
+
+  async escrowList(): Promise<CliResult> {
+    return this.run(['escrow', 'list'], []);
   }
 
   // ── Witnesses ──
