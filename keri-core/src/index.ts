@@ -26,3 +26,8 @@ export { isTransferable, isTransferableCode } from './key-commitment/transferabi
 
 export { Kever } from './state/kever.js';
 export { TraitDex } from './state/traits.js';
+
+export { checkDualThreshold } from './thresholds/dual-threshold.js';
+export type { DualThresholdResult } from './thresholds/types.js';
+export { buildWitnessConfig, applyWitnessChanges, enoughReceipts } from './thresholds/witness-config.js';
+export type { WitnessConfiguration } from './thresholds/witness-config.js';
