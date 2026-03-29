@@ -175,14 +175,16 @@ export class Matter {
       this.code = code;
       this._qb64 = qb64.substring(0, sizage.fs);
 
-      // Decode the value portion
-      const valueB64 = this._qb64.substring(sizage.hs + sizage.ss);
-      const decoded = decodeB64(valueB64);
+      // Decode the full qb64 to get the B-domain bytes.
+      // Replace the code chars with 'A' padding (zeros) so the B64
+      // decode covers the full fs chars including the code region.
+      const zeroPad = 'A'.repeat(sizage.hs + sizage.ss);
+      const fullB64 = zeroPad + this._qb64.substring(sizage.hs + sizage.ss);
+      const fullBytes = decodeB64(fullB64);
 
-      // Strip leading pad bytes
+      // Raw is right-aligned in the full bytes
       const expectedRaw = rawSizeFromSizage(sizage);
-      const padLen = decoded.length - expectedRaw;
-      this.raw = decoded.slice(padLen);
+      this.raw = fullBytes.slice(fullBytes.length - expectedRaw);
     } else {
       // Encode path
       const { code, raw } = args;
@@ -223,10 +225,18 @@ export class Matter {
   /**
    * Encode to T-domain qb64 string.
    *
+   * CESR encoding: the code and raw share a contiguous B64 stream.
+   * The entire qb64 is `fs` characters, which decodes to `fs * 3/4` bytes.
+   * The raw material is right-aligned in those bytes, with leading zeros
+   * for alignment. The code replaces the first `hs` characters of the
+   * B64 string — this is NOT a simple prepend, because the code chars
+   * share bit boundaries with the value chars.
+   *
    * Algorithm:
-   *   1. Compute padded raw: prepend ls lead bytes + enough zeros for alignment
-   *   2. Encode padded raw to B64
-   *   3. Prepend code string
+   *   1. Compute total B-domain bytes: fs * 3 / 4
+   *   2. Right-align raw in that buffer (leading zeros for pad)
+   *   3. Encode the entire buffer to B64 (produces fs chars)
+   *   4. Replace the first hs chars with the code string
    */
   private _infil(): string {
     const sizage = MtrSizage[this.code];
@@ -234,16 +244,17 @@ export class Matter {
       throw new Error(`Unknown code during encoding: "${this.code}"`);
     }
 
-    const valueChars = sizage.fs - sizage.hs - sizage.ss;
-    const totalValueBytes = Math.floor((valueChars * 3) / 4);
-    const padLen = totalValueBytes - this.raw.length;
+    // Total bytes in the B-domain representation
+    const totalBytes = (sizage.fs * 3) / 4;
+    // Raw is right-aligned; pad with zeros on the left
+    const padLen = totalBytes - this.raw.length;
+    const full = new Uint8Array(totalBytes);
+    full.set(this.raw, padLen);
 
-    // Build padded raw: [0]*padLen + raw
-    const padded = new Uint8Array(totalValueBytes);
-    padded.set(this.raw, padLen);
+    // Encode the full buffer to B64 (produces exactly fs chars)
+    const fullB64 = encodeB64(full);
 
-    // Encode to B64 and prepend code
-    const valueB64 = encodeB64(padded);
-    return this.code + valueB64;
+    // Replace the first hs chars with the code
+    return this.code + fullB64.substring(sizage.hs);
   }
 }
