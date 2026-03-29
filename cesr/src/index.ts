@@ -21,6 +21,10 @@ export {
 export type { Sizage, IndexedSizage, MtrDexCode, IdrDexCode } from './primitives/code-table.js';
 export type { CesrDomains } from './primitives/types.js';
 
+// ── Codec ──
+export { encode, decode, sniff } from './codec.js';
+export type { SerializationKind } from './codec.js';
+
 // ── Composition ──
 export { makeVersionString, parseVersionString } from './composition/version-string.js';
 export type { VersionInfo } from './composition/version-string.js';
