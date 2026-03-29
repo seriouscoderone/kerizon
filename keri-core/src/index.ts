@@ -48,3 +48,7 @@ export type { DuplicityStatus, WatcherPort } from './watcher/types.js';
 export { createDelegatedInception, createDelegationSeal } from './delegation/create.js';
 export { verifyDelegationSeal, findDelegationSeal } from './delegation/verify.js';
 export type { DelegatedInceptionConfig, DelegationSeal } from './delegation/types.js';
+
+export { createReceipt, classifyReceipt } from './receipting/create.js';
+export type { CreateReceiptOpts } from './receipting/create.js';
+export type { Receipt, ReceiptType } from './receipting/types.js';
