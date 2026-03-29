@@ -65,3 +65,13 @@ export type {
   AdmitConfig,
   SpurnConfig,
 } from './credential-exchange/types.js';
+
+export { createRegistry, createUpdate } from './credential-lifecycle/registry.js';
+export type { CreateRegistryConfig, CreateUpdateConfig } from './credential-lifecycle/registry.js';
+export { TelStateMachine } from './credential-lifecycle/tel.js';
+export { TEL_VALID_TRANSITIONS } from './credential-lifecycle/types.js';
+export type { CredentialState, CredentialStatus } from './credential-lifecycle/types.js';
+
+export { detectFork, isForked } from './evidence/detect.js';
+export type { EventRef } from './evidence/detect.js';
+export type { ForkDetected } from './evidence/types.js';
