@@ -13,7 +13,7 @@ import { Diger } from './diger.js';
 import { MtrDex, MtrSizage } from './code-table.js';
 
 /** Event types where d and i must share the same SAID. */
-const INCEPTION_TYPES = new Set(['icp', 'dip']);
+const INCEPTION_TYPES = new Set(['icp', 'dip', 'rip']);
 
 export class Saider {
   /**

@@ -20,7 +20,7 @@ import { MtrDex } from '../primitives/code-table.js';
 import { makeVersionString, parseVersionString } from './version-string.js';
 
 /** Event types where d and i share the same SAID. */
-const INCEPTION_TYPES = new Set(['icp', 'dip']);
+const INCEPTION_TYPES = new Set(['icp', 'dip', 'rip']);
 
 const DEFAULT_PROTOCOL = 'KERI';
 const DEFAULT_MAJOR = 1;
