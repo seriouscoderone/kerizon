@@ -212,6 +212,10 @@ async function cmdRotate(flags: Record<string, string[]>): Promise<void> {
     process.exit(1);
   }
 
+  if (!kever.transferable) {
+    throw new Error('non-transferable identifier cannot be rotated');
+  }
+
   const identity = store.getIdentity(prefix);
   if (!identity) {
     process.stderr.write(`Error: no identity data for prefix "${prefix}"\n`);

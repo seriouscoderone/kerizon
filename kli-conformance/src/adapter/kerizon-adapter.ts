@@ -6,6 +6,7 @@
  * functions work for both.
  */
 
+import { resolve } from 'node:path';
 import type {
   CliAdapter,
   CliResult,
@@ -60,17 +61,20 @@ export class KerizonAdapter implements CliAdapter {
   }
 
   private run(args: string[]): Promise<CliResult> {
+    // cwd must be the kerizon-cli package dir so node resolves file: dependencies
+    const cwd = this.useNode ? resolve(this.cliPath, '../..') : undefined;
     if (this.useNode) {
-      return execCli('node', [this.cliPath, ...args], { timeout: this.timeout });
+      return execCli('node', [this.cliPath, ...args], { timeout: this.timeout, cwd });
     }
-    return execCli(this.cliPath, args, { timeout: this.timeout });
+    return execCli(this.cliPath, args, { timeout: this.timeout, cwd });
   }
 
   private runBinary(args: string[]) {
+    const cwd = this.useNode ? resolve(this.cliPath, '../..') : undefined;
     if (this.useNode) {
-      return execCliBinary('node', [this.cliPath, ...args], { timeout: this.timeout });
+      return execCliBinary('node', [this.cliPath, ...args], { timeout: this.timeout, cwd });
     }
-    return execCliBinary(this.cliPath, args, { timeout: this.timeout });
+    return execCliBinary(this.cliPath, args, { timeout: this.timeout, cwd });
   }
 
   private keystoreArgs(): string[] {
