@@ -5,12 +5,12 @@ import { MtrDex, MtrSizage } from '../../src/primitives/code-table.js';
 
 /**
  * Compute expected raw byte size for a given Matter code.
- * raw_bytes = floor((fs - hs - ss) * 3 / 4)
+ * raw_bytes = floor((fs - hs - ss) * 3 / 4) - ls
  */
 function rawSizeForCode(code: string): number {
   const s = MtrSizage[code];
   if (!s) throw new Error(`Unknown code: ${code}`);
-  return Math.floor(((s.fs - s.hs - s.ss) * 3) / 4);
+  return Math.floor(((s.fs - s.hs - s.ss) * 3) / 4) - s.ls;
 }
 
 describe('Matter', () => {
@@ -86,20 +86,27 @@ describe('Matter', () => {
       expect(m2.raw).toEqual(raw);
     });
 
-    it('recovers code and raw from ECDSA_256k1_Ver qb64 (4-char code)', () => {
+    it('recovers code and raw from ECDSA_256k1N qb64 (4-char code)', () => {
       const raw = new Uint8Array(33);
       crypto.getRandomValues(raw);
 
-      const m1 = new Matter({ code: MtrDex.ECDSA_256k1_Ver, raw });
+      const m1 = new Matter({ code: MtrDex.ECDSA_256k1N, raw });
       const m2 = new Matter({ qb64: m1.qb64 });
 
-      expect(m2.code).toBe(MtrDex.ECDSA_256k1_Ver);
+      expect(m2.code).toBe(MtrDex.ECDSA_256k1N);
       expect(m2.raw).toEqual(raw);
     });
   });
 
   describe('round-trip for all codes in MtrSizage', () => {
     for (const [code, sizage] of Object.entries(MtrSizage)) {
+      // Skip variable-length codes (fs=0) — they need a size parameter
+      if (sizage.fs === 0) continue;
+
+      // Skip codes with soft size > 0 — they are tag/label/grammar codes
+      // that need a specialized Tagger subclass, not the generic Matter constructor
+      if (sizage.ss > 0) continue;
+
       it(`round-trips code "${code}" (fs=${sizage.fs})`, () => {
         const rawLen = rawSizeForCode(code);
         const raw = new Uint8Array(rawLen);
@@ -140,8 +147,11 @@ describe('Matter', () => {
 
   describe('property-based: encode/decode idempotence', () => {
     it('encode(decode(encode(code, raw))) is idempotent', () => {
-      // Pick a code at random from the table, generate matching raw bytes
-      const codes = Object.keys(MtrSizage);
+      // Only test fixed-length codes without soft size (generic Matter)
+      const codes = Object.keys(MtrSizage).filter((code) => {
+        const s = MtrSizage[code];
+        return s.fs > 0 && s.ss === 0;
+      });
 
       fc.assert(
         fc.property(

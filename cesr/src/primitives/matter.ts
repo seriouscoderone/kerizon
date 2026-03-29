@@ -93,16 +93,26 @@ export function b64Value(ch: string): number {
 /**
  * Resolve the Matter code from a qb64 string.
  * Tries 4-char, 2-char, then 1-char codes in that order.
+ *
+ * Hard-size selector chars:
+ *   hs=4 → first char is one of: 1, 2, 3, 7, 8, 9
+ *   hs=2 → first char is one of: 0, 4, 5, 6
+ *   hs=1 → everything else (A-Z, a-z, minus digits above)
  */
+const HS4_CHARS = new Set(['1', '2', '3', '7', '8', '9']);
+const HS2_CHARS = new Set(['0', '4', '5', '6']);
+
 export function resolveCode(qb64: string): { code: string; sizage: Sizage } {
-  // 4-char codes start with '1'
-  if (qb64[0] === '1' && qb64.length >= 4) {
+  const first = qb64[0];
+
+  // 4-char codes
+  if (HS4_CHARS.has(first) && qb64.length >= 4) {
     const c4 = qb64.substring(0, 4);
     if (MtrSizage[c4]) return { code: c4, sizage: MtrSizage[c4] };
   }
 
-  // 2-char codes start with '0'
-  if (qb64[0] === '0' && qb64.length >= 2) {
+  // 2-char codes
+  if (HS2_CHARS.has(first) && qb64.length >= 2) {
     const c2 = qb64.substring(0, 2);
     if (MtrSizage[c2]) return { code: c2, sizage: MtrSizage[c2] };
   }
