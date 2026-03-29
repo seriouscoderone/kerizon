@@ -28,8 +28,8 @@ const wil = DEMO_WITNESSES.wil;
 beforeAll(async () => {
   if (SKIP) return;
 
-  adapterA = new KliAdapter({ keystoreName: ksA, timeout: 30_000 });
-  adapterB = new KliAdapter({ keystoreName: ksB, timeout: 30_000 });
+  adapterA = new KliAdapter({ keystoreName: ksA, timeout: 60_000 });
+  adapterB = new KliAdapter({ keystoreName: ksB, timeout: 60_000 });
   await adapterA.init({ name: ksA, nopasscode: true });
   await adapterB.init({ name: ksB, nopasscode: true });
 

@@ -37,14 +37,17 @@ import {
   parseEventOutput,
 } from '../harness/result-parser.js';
 
-/** Well-known demo witness AIDs (from keripy witness/demo.py). */
+/**
+ * Well-known demo witness AIDs (from keripy 1.3.4 witness/demo.py).
+ * AIDs verified via: `kli witness demo && kli status --name <name> --alias <name>`
+ */
 export const DEMO_WITNESSES = {
-  wan: { aid: 'BLskRTInXnMxWaGqcpSyMgo0nYbalW99cGZESrz3zapM', http: 5642, tcp: 5632 },
-  wil: { aid: 'BBilc4-L3tFUnfM_wJr4S4OJanAv_VmF_dJNN6vkf2Ha', http: 5643, tcp: 5633 },
+  wan: { aid: 'BBilc4-L3tFUnfM_wJr4S4OJanAv_VmF_dJNN6vkf2Ha', http: 5642, tcp: 5632 },
+  wil: { aid: 'BLskRTInXnMxWaGqcpSyMgo0nYbalW99cGZESrz3zapM', http: 5643, tcp: 5633 },
   wes: { aid: 'BIKKuvBwpmDVA4Ds-EpL5bt9OqPzWPja2LigFYZN2YfX', http: 5644, tcp: 5634 },
   wit: { aid: 'BM35JN8XeJSEfpxopjn5jr7tAHCE5749f0OobhMLCorE', http: 5645, tcp: 5635 },
-  wub: { aid: 'BIj15u5V11bkbtAxMA7gcNJoPax7hdkm547OHm4YCE-M', http: 5646, tcp: 5636 },
-  wyz: { aid: 'BF2t2NPc1bwptY1hYV0YC_rBkAAMfR6JEBXrSqGF-wMU', http: 5647, tcp: 5637 },
+  wub: { aid: 'BIj15u5V11bkbtAxMA7gcNJZcax-7TgaBMLsQnMHpYHP', http: 5646, tcp: 5636 },
+  wyz: { aid: 'BF2rZTW79z4IXocYRQnjjsOuvFUQv-ptCf8Yltd7PfsM', http: 5647, tcp: 5637 },
 } as const;
 
 export interface KliAdapterOptions {
