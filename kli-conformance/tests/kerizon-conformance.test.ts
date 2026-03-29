@@ -201,3 +201,74 @@ describe('kerizon conformance — negative tests', () => {
     expect(r.valid).toBe(false);
   });
 });
+
+describe('kerizon conformance — multi-key thresholds (layer 1)', () => {
+  let multiAdapter: KerizonAdapter;
+  const multiKs = `kerizon-multi-${Date.now()}`;
+  let multiPrefix: string;
+
+  beforeAll(async () => {
+    multiAdapter = new KerizonAdapter({
+      cliPath: CLI_PATH,
+      useNode: true,
+      keystoreName: multiKs,
+    });
+    await multiAdapter.init({ name: multiKs, nopasscode: true });
+
+    const r = await multiAdapter.incept({
+      alias: 'multi-key',
+      transferable: true,
+      signingKeyCount: 3,
+      nextKeyCount: 3,
+      signingThreshold: '2',
+      nextThreshold: '2',
+    });
+    expect(r.exitCode).toBe(0);
+    multiPrefix = r.prefix!;
+  });
+
+  it('multi-key inception: status shows 3 keys', async () => {
+    const s = await multiAdapter.status('multi-key');
+    expect(s.exitCode).toBe(0);
+    expect(s.keyState!.currentKeys.length).toBe(3);
+    expect(s.keyState!.prefix).toBe(multiPrefix);
+  });
+
+  it('sign with multi-key produces multiple indexed signatures', async () => {
+    const r = await multiAdapter.sign('multi-key', 'multi-key test');
+    expect(r.exitCode).toBe(0);
+    expect(r.signatures!.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it('verify multi-key signatures succeeds', async () => {
+    const msg = 'verify multi-key';
+    const signed = await multiAdapter.sign('multi-key', msg);
+    const r = await multiAdapter.verify(multiPrefix, msg, signed.signatures!);
+    expect(r.exitCode).toBe(0);
+    expect(r.valid).toBe(true);
+  });
+
+  it('rotation of multi-key AID changes all keys', async () => {
+    const before = await multiAdapter.status('multi-key');
+    const keysBefore = before.keyState!.currentKeys;
+
+    const rot = await multiAdapter.rotate({ alias: 'multi-key' });
+    expect(rot.exitCode).toBe(0);
+
+    const after = await multiAdapter.status('multi-key');
+    expect(after.keyState!.currentKeys.length).toBe(3);
+    expect(after.keyState!.sn).toBe(1);
+    // Keys should have changed
+    const allSame = keysBefore.every((k, i) => k === after.keyState!.currentKeys[i]);
+    expect(allSame).toBe(false);
+  });
+
+  it('sign + verify still works after rotation', async () => {
+    const msg = 'post-rotation multi-key';
+    const signed = await multiAdapter.sign('multi-key', msg);
+    expect(signed.signatures!.length).toBeGreaterThanOrEqual(2);
+
+    const r = await multiAdapter.verify(multiPrefix, msg, signed.signatures!);
+    expect(r.valid).toBe(true);
+  });
+});
