@@ -35,7 +35,11 @@ export function execCli(
 
     const proc = spawn(command, args, {
       cwd: opts.cwd,
-      env: { ...process.env, ...opts.env },
+      env: {
+        ...process.env,
+        DYLD_FALLBACK_LIBRARY_PATH: '/opt/homebrew/lib',
+        ...opts.env,
+      },
       stdio: ['pipe', 'pipe', 'pipe'],
     });
 
@@ -93,7 +97,11 @@ export function execCliBinary(
 
     const proc = spawn(command, args, {
       cwd: opts.cwd,
-      env: { ...process.env, ...opts.env },
+      env: {
+        ...process.env,
+        DYLD_FALLBACK_LIBRARY_PATH: '/opt/homebrew/lib',
+        ...opts.env,
+      },
       stdio: ['pipe', 'pipe', 'pipe'],
     });
 
