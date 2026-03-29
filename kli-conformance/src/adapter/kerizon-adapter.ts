@@ -111,6 +111,7 @@ export class KerizonAdapter implements CliAdapter {
     if (config.signingThreshold) args.push('--isith', config.signingThreshold);
     if (config.nextThreshold) args.push('--nsith', config.nextThreshold);
     if (config.establishmentOnly) args.push('--est-only');
+    if (config.delegator) args.push('--delpre', config.delegator);
 
     const result = await this.run(args);
     const prefix = parsePrefix(result.stdout);

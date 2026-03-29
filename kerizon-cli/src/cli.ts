@@ -130,6 +130,7 @@ async function cmdIncept(flags: Record<string, string[]>): Promise<void> {
   const isith = getFlag(flags, 'isith') ?? '1';
   const nsith = getFlag(flags, 'nsith') ?? '1';
   const estOnly = hasFlag(flags, 'est-only');
+  const delpre = getFlag(flags, 'delpre');
 
   // Generate current signing keypairs
   const currentSigners: Signer[] = [];
@@ -159,6 +160,7 @@ async function cmdIncept(flags: Record<string, string[]>): Promise<void> {
     signingThreshold: isith,
     nextThreshold: nsith,
     configTraits,
+    delegator: delpre,
   });
 
   // Sign the event
