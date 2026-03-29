@@ -76,6 +76,22 @@ export { detectFork, isForked } from './evidence/detect.js';
 export type { EventRef } from './evidence/detect.js';
 export type { ForkDetected } from './evidence/types.js';
 
+export { DuplicityEventLog } from './integrity/del.js';
+export { SupersedingRule, canSupersede } from './integrity/superseding.js';
+export type { SupersedingCandidate } from './integrity/superseding.js';
+export type {
+  DuplicityEvidence,
+  SupersedingRecoveryEvent,
+  DisputedBranch,
+  TrustDecision,
+} from './integrity/types.js';
+
+export type {
+  EventSubmissionResult,
+  KERLResponse,
+  WitnessServicePort,
+} from './witness-api/types.js';
+
 export { KERL } from './accountability/kerl.js';
 export type { ReceiptRef } from './accountability/kerl.js';
 export { checkAccountability, ample } from './accountability/kawa.js';
