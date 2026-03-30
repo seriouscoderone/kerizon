@@ -112,22 +112,23 @@ export function parseKeyState(stdout: string): KeyState | undefined {
   const thresholdMatch = stdout.match(/^\s*Threshold:\s*(\d+)/m);
   const delegatorMatch = stdout.match(/^\s{4}Delegator:\s*(\S+)/m);
 
-  // Parse public keys (numbered list)
+  // Parse public keys from the "Public Keys:" section only
   const keys: string[] = [];
+  const publicKeysSection = stdout.split('Public Keys:')[1]?.split(/^[A-Z]/m)[0] ?? '';
   const keyRegex = /^\s+\d+\.\s+(\S+)/gm;
   let km;
-  while ((km = keyRegex.exec(stdout)) !== null) {
+  while ((km = keyRegex.exec(publicKeysSection)) !== null) {
     keys.push(km[1]);
   }
 
-  // Parse witnesses from verbose output if available
+  // Parse witnesses from the "Witnesses:" section (before "Public Keys:")
+  // Witness AIDs may start with any CESR prefix (B for non-transferable,
+  // E for SAID-based, D for Ed25519, etc.) so match any 44-char identifier.
   const backers: string[] = [];
-  const witRegex = /^\s+\d+\.\s+(B\S{43})/gm;
-  // Witnesses section comes before Public Keys
   const witnessSection = stdout.split('Public Keys:')[0];
   if (witnessSection) {
+    const witSectionRegex = /^\s+\d+\.\s+([A-Z][A-Za-z0-9_-]{43})/gm;
     let wm;
-    const witSectionRegex = /^\s+\d+\.\s+(B\S{43})/gm;
     while ((wm = witSectionRegex.exec(witnessSection)) !== null) {
       backers.push(wm[1]);
     }
