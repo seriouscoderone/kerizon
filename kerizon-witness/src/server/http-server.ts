@@ -25,9 +25,9 @@ export function createWitnessHttpServer(witness: KerizonWitness): http.Server {
 
       // GET /oobi/{...} — serve witness OOBI
       if (method === 'GET' && url.pathname.startsWith('/oobi/')) {
-        const kel = witness.getOwnKel();
+        const oobiResponse = await witness.getOobiResponse();
         res.writeHead(200, { 'Content-Type': 'application/cesr+json' });
-        res.end(kel);
+        res.end(oobiResponse);
         return;
       }
 

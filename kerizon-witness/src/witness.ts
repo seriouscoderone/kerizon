@@ -6,7 +6,7 @@
  */
 
 import { Signer, Siger, Serder, parseStream, MtrDex, CtrDex_1_0, encodeB64, b64Index, Matter, Diger, makeVersionString } from '@kerizon/cesr';
-import { incept, Kever, processEvent as applyEvent, type KeverStore } from '@kerizon/keri-core';
+import { incept, Kever, processEvent as applyEvent, reply, type KeverStore } from '@kerizon/keri-core';
 import type { WitnessStore } from './store/types.js';
 
 export interface WitnessConfig {
@@ -139,6 +139,7 @@ export class KerizonWitness {
   private keverStore: MemoryKeverStore;
   private inceptionRaw: string;
   private inceptionSig: string;
+  private httpPort: number;
 
   private constructor(
     prefix: string,
@@ -147,6 +148,7 @@ export class KerizonWitness {
     keverStore: MemoryKeverStore,
     inceptionRaw: string,
     inceptionSig: string,
+    httpPort: number,
   ) {
     this.prefix = prefix;
     this.signer = signer;
@@ -154,6 +156,7 @@ export class KerizonWitness {
     this.keverStore = keverStore;
     this.inceptionRaw = inceptionRaw;
     this.inceptionSig = inceptionSig;
+    this.httpPort = httpPort;
   }
 
   /**
@@ -186,7 +189,7 @@ export class KerizonWitness {
         keverStore.set(prefix, kever);
       }
 
-      return new KerizonWitness(prefix, signer, store, keverStore, inceptionRaw, inceptionSig);
+      return new KerizonWitness(prefix, signer, store, keverStore, inceptionRaw, inceptionSig, config.httpPort);
     }
 
     // Generate new keypair
@@ -219,7 +222,7 @@ export class KerizonWitness {
     const kever = Kever.fromInception(serder);
     keverStore.set(prefix, kever);
 
-    return new KerizonWitness(prefix, signer, store, keverStore, rawJson, siger.qb64);
+    return new KerizonWitness(prefix, signer, store, keverStore, rawJson, siger.qb64, config.httpPort);
   }
 
   /**
@@ -288,6 +291,39 @@ export class KerizonWitness {
     const sigQuadlets = this.inceptionSig.length / 4;
     const counter = encodeCounter(CtrDex_1_0.ControllerIdxSigs, sigQuadlets);
     return this.inceptionRaw + counter + this.inceptionSig;
+  }
+
+  /**
+   * Return the full OOBI response: inception event with sig attachment,
+   * followed by a `/loc/scheme` reply message declaring this witness's
+   * HTTP endpoint, signed with a non-transferable receipt couple (`-C`).
+   *
+   * kli's OOBI resolver expects reply messages so it can store the
+   * witness's endpoint location for future communication.
+   */
+  async getOobiResponse(): Promise<string> {
+    const kel = this.getOwnKel();
+    if (!kel) return '';
+
+    // Build a /loc/scheme reply declaring our HTTP endpoint
+    const locSerder = reply({
+      route: '/loc/scheme',
+      data: {
+        eid: this.prefix,
+        scheme: 'http',
+        url: `http://127.0.0.1:${this.httpPort}`,
+      },
+    });
+
+    // Sign the reply with an unindexed Ed25519 signature (Cigar / code 0B)
+    const sigRaw = await this.signer.sign(locSerder.raw);
+    const cigar = new Matter({ code: MtrDex.Ed25519_Sig, raw: sigRaw });
+
+    // Non-transferable receipt couple: prefix (44 chars) + cigar (88 chars) = 132 chars = 33 quadlets
+    const coupleQuadlets = (this.prefix.length + cigar.qb64.length) / 4;
+    const counter = encodeCounter(CtrDex_1_0.NonTransReceiptCouples, coupleQuadlets);
+
+    return kel + new TextDecoder().decode(locSerder.raw) + counter + this.prefix + cigar.qb64;
   }
 
   /**

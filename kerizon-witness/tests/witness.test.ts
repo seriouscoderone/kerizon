@@ -149,6 +149,58 @@ describe('KerizonWitness', () => {
     expect(attachPart.startsWith('-A')).toBe(true);
   });
 
+  it('getOobiResponse includes inception and /loc/scheme reply with signature', async () => {
+    const witness = await KerizonWitness.create(
+      { name: 'wit0', httpPort: 5632, tcpPort: 5633 },
+      store,
+    );
+
+    const response = await witness.getOobiResponse();
+    expect(response.length).toBeGreaterThan(0);
+
+    // Should start with the inception event
+    let depth = 0;
+    let icpEnd = 0;
+    for (let i = 0; i < response.length; i++) {
+      if (response[i] === '{') depth++;
+      if (response[i] === '}') depth--;
+      if (depth === 0 && response[i] === '}') { icpEnd = i + 1; break; }
+    }
+    const icpParsed = JSON.parse(response.slice(0, icpEnd));
+    expect(icpParsed.t).toBe('icp');
+    expect(icpParsed.i).toBe(witness.prefix);
+
+    // After inception JSON + sig attachment (92 chars), find reply
+    const afterIcp = icpEnd + 92;
+    depth = 0;
+    let rpyEnd = 0;
+    for (let i = afterIcp; i < response.length; i++) {
+      if (response[i] === '{') depth++;
+      if (response[i] === '}') depth--;
+      if (depth === 0 && response[i] === '}') { rpyEnd = i + 1; break; }
+    }
+    const rpyParsed = JSON.parse(response.slice(afterIcp, rpyEnd));
+    expect(rpyParsed.t).toBe('rpy');
+    expect(rpyParsed.r).toBe('/loc/scheme');
+    expect(rpyParsed.a.eid).toBe(witness.prefix);
+    expect(rpyParsed.a.scheme).toBe('http');
+    expect(rpyParsed.a.url).toBe('http://127.0.0.1:5632');
+
+    // Attachment: -C counter (4 chars) + prefix (44 chars) + cigar (88 chars) = 136 chars
+    const rpyAttach = response.slice(rpyEnd);
+    expect(rpyAttach.startsWith('-C')).toBe(true);
+    expect(rpyAttach.length).toBe(136);
+
+    // The couple should contain the witness prefix
+    const couplePrefix = rpyAttach.slice(4, 48);
+    expect(couplePrefix).toBe(witness.prefix);
+
+    // The cigar should be 88 chars (Ed25519 unindexed sig, code 0B)
+    const cigar = rpyAttach.slice(48);
+    expect(cigar.length).toBe(88);
+    expect(cigar.startsWith('0B')).toBe(true);
+  });
+
   it('getKel returns stored events', async () => {
     const witness = await KerizonWitness.create(
       { name: 'wit0', httpPort: 5632, tcpPort: 5633 },

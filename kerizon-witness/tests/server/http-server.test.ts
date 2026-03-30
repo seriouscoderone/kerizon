@@ -86,19 +86,56 @@ describe('HTTP server', () => {
     await rm(dbDir, { recursive: true, force: true });
   });
 
-  it('GET /oobi/anything returns 200 with CESR body (JSON + sig attachment)', async () => {
+  it('GET /oobi/anything returns 200 with inception + loc/scheme reply', async () => {
     const res = await httpGet(`${baseUrl}/oobi/anything`);
     expect(res.status).toBe(200);
     expect(res.body.length).toBeGreaterThan(0);
-    // The body is a full CESR stream: JSON + counter + sig attachment.
-    // Extract the JSON portion before the attachment.
-    const jsonEnd = res.body.lastIndexOf('}') + 1;
-    const jsonPart = res.body.slice(0, jsonEnd);
-    const parsed = JSON.parse(jsonPart);
-    expect(parsed.v).toBeDefined();
-    expect(parsed.t).toBe('icp');
-    // Witness uses a B-prefix (non-transferable basic)
-    expect(parsed.i[0]).toBe('B');
+
+    // The response contains two CESR messages:
+    // 1. Inception event JSON + -A counter + indexed sig
+    // 2. /loc/scheme reply JSON + -C counter + prefix + cigar
+
+    // Find the first JSON object (inception event)
+    const firstClose = res.body.indexOf('}') + 1;
+    // Walk past nested objects to find end of first JSON
+    let depth = 0;
+    let icpEnd = 0;
+    for (let i = 0; i < res.body.length; i++) {
+      if (res.body[i] === '{') depth++;
+      if (res.body[i] === '}') depth--;
+      if (depth === 0 && res.body[i] === '}') { icpEnd = i + 1; break; }
+    }
+    const icpJson = res.body.slice(0, icpEnd);
+    const icpParsed = JSON.parse(icpJson);
+    expect(icpParsed.v).toBeDefined();
+    expect(icpParsed.t).toBe('icp');
+    expect(icpParsed.i[0]).toBe('B');
+
+    // After the inception + sig attachment, find the reply message
+    // Skip past the -A counter (4 chars) + sig (88 chars) = 92 chars
+    const afterIcp = icpEnd + 92;
+    // Find the reply JSON
+    depth = 0;
+    let rpyEnd = 0;
+    for (let i = afterIcp; i < res.body.length; i++) {
+      if (res.body[i] === '{') depth++;
+      if (res.body[i] === '}') depth--;
+      if (depth === 0 && res.body[i] === '}') { rpyEnd = i + 1; break; }
+    }
+    expect(rpyEnd).toBeGreaterThan(afterIcp);
+    const rpyJson = res.body.slice(afterIcp, rpyEnd);
+    const rpyParsed = JSON.parse(rpyJson);
+    expect(rpyParsed.t).toBe('rpy');
+    expect(rpyParsed.r).toBe('/loc/scheme');
+    expect(rpyParsed.a.eid).toBe(witness.prefix);
+    expect(rpyParsed.a.scheme).toBe('http');
+    expect(rpyParsed.a.url).toContain('http://127.0.0.1:');
+
+    // After the reply JSON, there should be a -C counter + couple
+    const rpyAttach = res.body.slice(rpyEnd);
+    expect(rpyAttach.startsWith('-C')).toBe(true);
+    // Couple: counter (4) + prefix (44) + cigar (88) = 136 chars
+    expect(rpyAttach.length).toBe(4 + 44 + 88);
   });
 
   it('POST / with valid CESR inception returns 204', async () => {
