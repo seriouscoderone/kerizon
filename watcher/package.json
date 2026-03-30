@@ -1,5 +1,5 @@
 {
-  "name": "@kerizon/keri-core",
+  "name": "@kerizon/watcher",
   "version": "0.1.0",
   "type": "module",
   "main": "./dist/index.cjs",
@@ -17,15 +17,9 @@
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
   },
-  "dependencies": {
-    "@kerizon/cesr": "file:../cesr",
-    "@kerizon/discovery": "file:../discovery",
-    "@kerizon/watcher": "file:../watcher"
-  },
   "devDependencies": {
     "typescript": "^5.7.0",
     "vitest": "^3.1.0",
-    "tsup": "^8.5.0",
-    "@types/node": "^22.15.0"
+    "tsup": "^8.5.0"
   }
 }
