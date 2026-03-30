@@ -1,7 +1,9 @@
 /**
  * Credential lifecycle tests: registry inception, vc create, vc list, vc revoke.
  *
- * Requires kli + witnesses running.
+ * Requires kli + witnesses running with endpoint records configured.
+ * Note: keripy `kli witness demo` may start witnesses without proper
+ * endpoint registration, causing registry incept to timeout.
  *
  * Spec invariants tested:
  * - credential-lifecycle/status: registry inception produces REGID
@@ -74,5 +76,8 @@ describe.skipIf(SKIP)('credential lifecycle', () => {
 });
 
 describe.skipIf(!KLI_AVAILABLE)('credential lifecycle - without witnesses', () => {
-  it.todo('vc operations require a registry which requires witnesses for anchoring');
+  // Registry inception requires witness infrastructure for TEL event anchoring.
+  // keripy demo witnesses may not have endpoint records configured, causing
+  // registry incept to timeout even when witnesses are reachable on HTTP.
+  it.todo('registry inception requires witnesses with endpoint records (keripy demo limitation)');
 });

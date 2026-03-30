@@ -53,7 +53,8 @@ describe.skipIf(!KLI_AVAILABLE)('delegation flow', () => {
     expect(icp['di']).toBeUndefined();
   });
 
-  // Full delegation test requires witnesses running - documented but skipped by default
-  it.todo('delegated inception creates correct bidirectional peg');
-  it.todo('delegated rotation is confirmed by delegator');
+  // Full delegation requires witnesses with endpoint records for OOBI exchange.
+  // See delegation-extended.test.ts for the full version (skips when witnesses unavailable).
+  it.todo('delegated inception creates correct bidirectional peg (blocked: requires witnesses + OOBI exchange)');
+  it.todo('delegated rotation is confirmed by delegator (blocked: requires witnesses + OOBI exchange)');
 });

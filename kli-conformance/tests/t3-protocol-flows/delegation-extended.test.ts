@@ -1,7 +1,9 @@
 /**
  * Extended delegation tests: full delegated inception/rotation lifecycle.
  *
- * Requires kli + witnesses running.
+ * Requires kli + witnesses running with endpoint records configured.
+ * Note: kli oobiGenerate may return exit 255 when witness endpoint
+ * records are not set up (keripy demo limitation).
  *
  * Spec invariants tested:
  * - delegation/authorization: cooperative delegation, two-way binding, di field

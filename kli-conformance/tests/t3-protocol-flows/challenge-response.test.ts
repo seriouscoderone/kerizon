@@ -64,5 +64,5 @@ describe.skipIf(!KLI_AVAILABLE)('challenge-response - generation', () => {
 });
 
 describe.skipIf(SKIP_WITNESSES)('challenge-response - full flow', () => {
-  it.todo('challenge respond + verify between two parties requires mailbox infrastructure');
+  it.todo('challenge respond + verify between two parties (blocked: requires mailbox infrastructure + witnesses)');
 });

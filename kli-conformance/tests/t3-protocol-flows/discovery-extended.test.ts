@@ -1,7 +1,9 @@
 /**
  * Extended discovery tests: OOBI generation, resolution, endpoint registration.
  *
- * Requires kli + witnesses running.
+ * Requires kli + witnesses running with endpoint records configured.
+ * Note: kli oobiGenerate returns exit 255 when witness endpoint
+ * records are not registered (keripy `kli witness demo` limitation).
  *
  * Spec invariants tested:
  * - discovery: OOBI format contains AID prefix and role

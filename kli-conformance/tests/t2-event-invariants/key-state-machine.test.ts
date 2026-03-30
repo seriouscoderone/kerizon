@@ -265,7 +265,7 @@ describe.skipIf(!KLI_AVAILABLE)('key state machine invariants', () => {
       await adapter.init({ name: ks, nopasscode: true });
     });
 
-    it.todo('DnD identifier has doNotDelegate in config traits -- kli config file may not support DnD key directly', async () => {
+    it('DnD identifier has doNotDelegate in config traits', async () => {
       const alias = 'dnd-aid';
       const incept = await adapter.incept({
         alias,
