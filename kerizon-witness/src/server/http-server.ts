@@ -26,7 +26,10 @@ export function createWitnessHttpServer(witness: KerizonWitness): http.Server {
       // GET /oobi/{...} — serve witness OOBI
       if (method === 'GET' && url.pathname.startsWith('/oobi/')) {
         const oobiResponse = await witness.getOobiResponse();
-        res.writeHead(200, { 'Content-Type': 'application/cesr+json' });
+        res.writeHead(200, {
+          'Content-Type': 'application/json+cesr',
+          'KERI-AID': witness.prefix,
+        });
         res.end(oobiResponse);
         return;
       }
@@ -42,7 +45,7 @@ export function createWitnessHttpServer(witness: KerizonWitness): http.Server {
 
         const kel = await witness.getKel(prefix);
         if (kel) {
-          res.writeHead(200, { 'Content-Type': 'application/cesr+json' });
+          res.writeHead(200, { 'Content-Type': 'application/json+cesr' });
           res.end(kel);
           return;
         }
