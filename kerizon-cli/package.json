@@ -12,7 +12,8 @@
   },
   "dependencies": {
     "@kerizon/cesr": "file:../cesr",
-    "@kerizon/keri-core": "file:../keri-core"
+    "@kerizon/keri-core": "file:../keri-core",
+    "@kerizon/witness": "file:../kerizon-witness"
   },
   "devDependencies": {
     "@types/node": "^22.15.0",

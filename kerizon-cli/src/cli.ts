@@ -42,6 +42,8 @@ const MULTI_WORD_COMMANDS = [
   'vc registry incept',
   'vc create',
   'vc list',
+  'witness start',
+  'witness demo',
 ];
 
 function parseArgs(argv: string[]): { command: string; flags: Record<string, string[]> } {
@@ -923,6 +925,64 @@ async function cmdVcList(flags: Record<string, string[]>): Promise<void> {
   }
 }
 
+async function cmdWitnessStart(flags: Record<string, string[]>): Promise<void> {
+  const name = getFlag(flags, 'name') ?? 'witness';
+  const httpPort = getIntFlag(flags, 'http', 5642);
+  const tcpPort = getIntFlag(flags, 'tcp', 5632);
+  const dbPath = join(homedir(), '.kerizon-witness', name);
+
+  mkdirSync(dbPath, { recursive: true });
+
+  const { NedbStore, KerizonWitness, createWitnessHttpServer, createWitnessTcpServer } = await import('@kerizon/witness');
+  const store = new NedbStore(dbPath);
+  const witness = await KerizonWitness.create({ name, httpPort, tcpPort, dbPath }, store);
+
+  const httpServer = createWitnessHttpServer(witness);
+  const tcpServer = createWitnessTcpServer(witness);
+
+  httpServer.listen(httpPort, () => {
+    process.stdout.write(`Witness ${name} (${witness.prefix}) HTTP on port ${httpPort}\n`);
+  });
+  tcpServer.listen(tcpPort, () => {
+    process.stdout.write(`Witness ${name} (${witness.prefix}) TCP on port ${tcpPort}\n`);
+  });
+
+  // Keep running until SIGTERM
+  await new Promise<void>((resolve) => {
+    process.on('SIGTERM', () => { httpServer.close(); tcpServer.close(); resolve(); });
+    process.on('SIGINT', () => { httpServer.close(); tcpServer.close(); resolve(); });
+  });
+}
+
+async function cmdWitnessDemo(flags: Record<string, string[]>): Promise<void> {
+  const witnesses = [
+    { name: 'wan', httpPort: 5642, tcpPort: 5632 },
+    { name: 'wil', httpPort: 5643, tcpPort: 5633 },
+    { name: 'wes', httpPort: 5644, tcpPort: 5634 },
+  ];
+
+  const { NedbStore, KerizonWitness, createWitnessHttpServer, createWitnessTcpServer } = await import('@kerizon/witness');
+
+  for (const w of witnesses) {
+    const dbPath = join(homedir(), '.kerizon-witness', w.name);
+    mkdirSync(dbPath, { recursive: true });
+    const store = new NedbStore(dbPath);
+    const witness = await KerizonWitness.create({ ...w, dbPath }, store);
+
+    const http = createWitnessHttpServer(witness);
+    const tcp = createWitnessTcpServer(witness);
+
+    http.listen(w.httpPort);
+    tcp.listen(w.tcpPort);
+    process.stdout.write(`Witness ${w.name} (${witness.prefix}) on HTTP:${w.httpPort} TCP:${w.tcpPort}\n`);
+  }
+
+  await new Promise<void>((resolve) => {
+    process.on('SIGTERM', resolve);
+    process.on('SIGINT', resolve);
+  });
+}
+
 function cmdVersion(): void {
   process.stdout.write('Library version: 0.1.0\n');
 }
@@ -976,13 +1036,19 @@ async function main(): Promise<void> {
       case 'vc list':
         await cmdVcList(flags);
         break;
+      case 'witness start':
+        await cmdWitnessStart(flags);
+        break;
+      case 'witness demo':
+        await cmdWitnessDemo(flags);
+        break;
       case 'version':
         cmdVersion();
         break;
       default:
         process.stderr.write(`Unknown command: ${command}\n`);
         process.stderr.write('Usage: kerizon <command> [options]\n');
-        process.stderr.write('Commands: init, incept, rotate, interact, status, sign, verify, list, export, import, event, vc registry incept, vc create, vc list, version\n');
+        process.stderr.write('Commands: init, incept, rotate, interact, status, sign, verify, list, export, import, event, vc registry incept, vc create, vc list, witness start, witness demo, version\n');
         process.exit(1);
     }
   } catch (err: unknown) {
