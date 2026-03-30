@@ -130,6 +130,11 @@ export type { PrivacyLevel, DisclosureType, DisclosureRequest } from './privacy/
 export { WatcherService } from './watcher-service/orchestrator.js';
 
 export type { LocalAgentPort } from './local-agent/types.js';
+export { LocalAgent } from './local-agent/agent.js';
+export type { LocalAgentIdentity } from './local-agent/agent.js';
+
+export type { SecurityTier, Keeper, SignifyClient } from './signify-client/types.js';
+export { SimpleKeeper } from './signify-client/keeper.js';
 
 export type { AgentConfig, CloudAgentPort } from './cloud-agent/types.js';
 export { AgentManager } from './cloud-agent/manager.js';
