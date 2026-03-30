@@ -97,6 +97,8 @@ export { KERL } from './accountability/kerl.js';
 export type { ReceiptRef } from './accountability/kerl.js';
 export { checkAccountability, ample } from './accountability/kawa.js';
 export type { AccountabilityResult } from './accountability/kawa.js';
+export { buildDisseminationPlan, classifyMode } from './accountability/dissemination.js';
+export type { DisseminationConfig, DisseminationPlan } from './accountability/dissemination.js';
 
 export { verifyCredentialArtifacts, verifyProofChain } from './credential-proof/verify.js';
 export type { CredentialArtifacts, ProofChain } from './credential-proof/verify.js';
@@ -126,6 +128,8 @@ export { CredentialLifecycle } from './credential-lifecycle/facade.js';
 
 export { classifyPrivacyLevel, validateDisclosure } from './privacy/disclosure.js';
 export type { PrivacyLevel, DisclosureType, DisclosureRequest } from './privacy/types.js';
+export { computeBlid, deriveUuid, verifyBlid } from './privacy/blinding.js';
+export { computeSadPathDigest, computeAggregate, verifyInclusion } from './privacy/aggregation.js';
 
 export { WatcherService } from './watcher-service/orchestrator.js';
 
@@ -135,6 +139,15 @@ export type { LocalAgentIdentity } from './local-agent/agent.js';
 
 export type { SecurityTier, Keeper, SignifyClient } from './signify-client/types.js';
 export { SimpleKeeper } from './signify-client/keeper.js';
+export type {
+  IdentifierResource,
+  CredentialResource,
+  RegistryResource,
+  ExchangeResource,
+  OobiResource,
+  SignifyResources,
+} from './signify-client/resources.js';
 
 export type { AgentConfig, CloudAgentPort } from './cloud-agent/types.js';
 export { AgentManager } from './cloud-agent/manager.js';
+export type { BootEndpoint, AdminEndpoint, EventProcessor } from './cloud-agent/api.js';
