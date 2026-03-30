@@ -242,7 +242,7 @@ export class KerizonWitness {
 
     for (const msg of messages) {
       const serder = msg.serder;
-      const result = applyEvent(serder, this.keverStore);
+      const result = await applyEvent(serder, this.keverStore);
 
       if (result.status === 'accepted') {
         // Store the event

@@ -30,6 +30,7 @@ import {
   computeNextDigest,
   createRegistry,
   createUpdate,
+  verifySignatures,
 } from '@kerizon/keri-core';
 import { MemoryStore } from './store/memory-store.js';
 
@@ -749,6 +750,18 @@ async function cmdImport(flags: Record<string, string[]>): Promise<void> {
       if (serder.sn !== 0) {
         throw new Error(`Inception event must have sn=0, got sn=${serder.sn}`);
       }
+      // Verify signatures against keys declared in the inception event
+      if (msg.sigers.length > 0) {
+        const sigResult = await verifySignatures(
+          serder.raw,
+          msg.sigers,
+          serder.ked['k'] as string[],
+          serder.ked['kt'] as string,
+        );
+        if (!sigResult.verified) {
+          throw new Error(`Signature verification failed for ${ilk}: ${sigResult.reason}`);
+        }
+      }
       const kever = Kever.fromInception(serder);
       store.appendEvent(prefix, serder, sigQb64s);
       store.putKever(prefix, kever);
@@ -758,6 +771,18 @@ async function cmdImport(flags: Record<string, string[]>): Promise<void> {
       if (!kever) {
         throw new Error(`No key state for prefix ${prefix} — cannot apply ${ilk} without prior inception`);
       }
+      // Verify signatures against current key state
+      if (msg.sigers.length > 0) {
+        const sigResult = await verifySignatures(
+          serder.raw,
+          msg.sigers,
+          kever.currentKeys,
+          kever.signingThreshold,
+        );
+        if (!sigResult.verified) {
+          throw new Error(`Signature verification failed for ${ilk}: ${sigResult.reason}`);
+        }
+      }
       const newKever = kever.applyEstablishment(serder);
       store.appendEvent(prefix, serder, sigQb64s);
       store.putKever(prefix, newKever);
@@ -766,6 +791,18 @@ async function cmdImport(flags: Record<string, string[]>): Promise<void> {
       const kever = store.getKever(prefix);
       if (!kever) {
         throw new Error(`No key state for prefix ${prefix} — cannot apply ixn without prior inception`);
+      }
+      // Verify signatures against current key state
+      if (msg.sigers.length > 0) {
+        const sigResult = await verifySignatures(
+          serder.raw,
+          msg.sigers,
+          kever.currentKeys,
+          kever.signingThreshold,
+        );
+        if (!sigResult.verified) {
+          throw new Error(`Signature verification failed for ${ilk}: ${sigResult.reason}`);
+        }
       }
       const newKever = kever.applyInteraction(serder);
       store.appendEvent(prefix, serder, sigQb64s);

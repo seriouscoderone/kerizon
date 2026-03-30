@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { Signer, Diger } from '@kerizon/cesr';
+import { Signer, Siger, Diger } from '@kerizon/cesr';
 import { incept } from '../../src/events/inception.js';
 import { rotate } from '../../src/events/rotation.js';
 import { interact } from '../../src/events/interaction.js';
@@ -34,7 +34,7 @@ describe('processEvent', () => {
       nextDigests: [nextDigest.qb64],
     });
 
-    const result = processEvent(serder, store);
+    const result = await processEvent(serder, store);
     expect(result).toEqual({
       status: 'accepted',
       aid: serder.pre,
@@ -57,7 +57,7 @@ describe('processEvent', () => {
       nextDigests: [nextDigest.qb64],
     });
 
-    const result = processEvent(rotSerder, store);
+    const result = await processEvent(rotSerder, store);
     expect(result.status).toBe('escrowed');
     if (result.status === 'escrowed') {
       expect(result.escrowType).toBe('OOE');
@@ -75,7 +75,7 @@ describe('processEvent', () => {
       keys: [kp0.signer.verfer.qb64],
       nextDigests: [kp0.nextDigest.qb64],
     });
-    processEvent(icpSerder, store);
+    await processEvent(icpSerder, store);
 
     // Rotation at sn=1
     const rotSerder = rotate({
@@ -85,7 +85,7 @@ describe('processEvent', () => {
       keys: [kp1.signer.verfer.qb64],
       nextDigests: [kp1.nextDigest.qb64],
     });
-    const result = processEvent(rotSerder, store);
+    const result = await processEvent(rotSerder, store);
 
     expect(result).toEqual({
       status: 'accepted',
@@ -103,14 +103,14 @@ describe('processEvent', () => {
       keys: [signer.verfer.qb64],
       nextDigests: [nextDigest.qb64],
     });
-    processEvent(icpSerder, store);
+    await processEvent(icpSerder, store);
 
     const ixnSerder = interact({
       prefix: icpSerder.pre,
       priorDigest: icpSerder.said,
       sn: 1,
     });
-    const result = processEvent(ixnSerder, store);
+    const result = await processEvent(ixnSerder, store);
 
     expect(result).toEqual({
       status: 'accepted',
@@ -129,7 +129,7 @@ describe('processEvent', () => {
       keys: [signer.verfer.qb64],
       nextDigests: [nextDigest.qb64],
     });
-    processEvent(icpSerder, store);
+    await processEvent(icpSerder, store);
 
     // Jump to sn=5 when expected is 1
     const rotSerder = rotate({
@@ -139,7 +139,7 @@ describe('processEvent', () => {
       keys: [kp1.signer.verfer.qb64],
       nextDigests: [kp1.nextDigest.qb64],
     });
-    const result = processEvent(rotSerder, store);
+    const result = await processEvent(rotSerder, store);
 
     expect(result.status).toBe('escrowed');
     if (result.status === 'escrowed') {
@@ -158,7 +158,7 @@ describe('processEvent', () => {
       keys: [kp0.signer.verfer.qb64],
       nextDigests: [kp0.nextDigest.qb64],
     });
-    processEvent(icpSerder, store);
+    await processEvent(icpSerder, store);
 
     // Rotation at sn=1
     const rotSerder = rotate({
@@ -168,10 +168,10 @@ describe('processEvent', () => {
       keys: [kp1.signer.verfer.qb64],
       nextDigests: [kp1.nextDigest.qb64],
     });
-    processEvent(rotSerder, store);
+    await processEvent(rotSerder, store);
 
     // Re-send icp (sn=0) — now sn < expectedSn (2)
-    const result = processEvent(icpSerder, store);
+    const result = await processEvent(icpSerder, store);
     expect(result).toEqual({
       status: 'duplicate',
       aid: icpSerder.pre,
@@ -188,14 +188,14 @@ describe('processEvent', () => {
       nextDigests: [nextDigest.qb64],
       configTraits: [TraitDex.EstOnly],
     });
-    processEvent(icpSerder, store);
+    await processEvent(icpSerder, store);
 
     const ixnSerder = interact({
       prefix: icpSerder.pre,
       priorDigest: icpSerder.said,
       sn: 1,
     });
-    const result = processEvent(ixnSerder, store);
+    const result = await processEvent(ixnSerder, store);
 
     expect(result.status).toBe('rejected');
     if (result.status === 'rejected') {
@@ -213,7 +213,7 @@ describe('processEvent', () => {
       keys: [kp0.signer.verfer.qb64],
       nextDigests: [kp0.nextDigest.qb64],
     });
-    const r1 = processEvent(icpSerder, store);
+    const r1 = await processEvent(icpSerder, store);
     expect(r1).toEqual({ status: 'accepted', aid: icpSerder.pre, sn: 0, said: icpSerder.said });
 
     // rot at sn=1
@@ -224,7 +224,7 @@ describe('processEvent', () => {
       keys: [kp1.signer.verfer.qb64],
       nextDigests: [kp1.nextDigest.qb64],
     });
-    const r2 = processEvent(rotSerder, store);
+    const r2 = await processEvent(rotSerder, store);
     expect(r2).toEqual({ status: 'accepted', aid: icpSerder.pre, sn: 1, said: rotSerder.said });
 
     // ixn at sn=2
@@ -233,7 +233,7 @@ describe('processEvent', () => {
       priorDigest: rotSerder.said,
       sn: 2,
     });
-    const r3 = processEvent(ixnSerder, store);
+    const r3 = await processEvent(ixnSerder, store);
     expect(r3).toEqual({ status: 'accepted', aid: icpSerder.pre, sn: 2, said: ixnSerder.said });
   });
 
@@ -247,7 +247,7 @@ describe('processEvent', () => {
       keys: [signer.verfer.qb64],
       nextDigests: [],
     });
-    processEvent(icpSerder, store);
+    await processEvent(icpSerder, store);
 
     const rotSerder = rotate({
       prefix: icpSerder.pre,
@@ -256,11 +256,120 @@ describe('processEvent', () => {
       keys: [kp1.signer.verfer.qb64],
       nextDigests: [kp1.nextDigest.qb64],
     });
-    const result = processEvent(rotSerder, store);
+    const result = await processEvent(rotSerder, store);
 
     expect(result.status).toBe('rejected');
     if (result.status === 'rejected') {
       expect(result.reason).toContain('non-transferable');
     }
+  });
+
+  it('inception with valid sigers -> accepted', async () => {
+    const store = new SimpleKeverStore();
+    const { signer, nextDigest } = await makeKeypair();
+    const serder = incept({
+      keys: [signer.verfer.qb64],
+      nextDigests: [nextDigest.qb64],
+    });
+
+    const sigRaw = await signer.sign(serder.raw);
+    const siger = Siger.create({ raw: sigRaw, index: 0 });
+
+    const result = await processEvent(serder, store, [siger]);
+    expect(result).toEqual({
+      status: 'accepted',
+      aid: serder.pre,
+      sn: 0,
+      said: serder.said,
+    });
+  });
+
+  it('inception with bad sigers -> rejected', async () => {
+    const store = new SimpleKeverStore();
+    const kp = await makeKeypair();
+    const serder = incept({
+      keys: [kp.signer.verfer.qb64],
+      nextDigests: [kp.nextDigest.qb64],
+    });
+
+    // Sign with nextSigner (wrong key)
+    const wrongSigRaw = await kp.nextSigner.sign(serder.raw);
+    const badSiger = Siger.create({ raw: wrongSigRaw, index: 0 });
+
+    const result = await processEvent(serder, store, [badSiger]);
+    expect(result.status).toBe('rejected');
+    if (result.status === 'rejected') {
+      expect(result.reason).toContain('threshold not satisfied');
+    }
+    // Kever should NOT have been created
+    expect(store.get(serder.pre)).toBeUndefined();
+  });
+
+  it('interaction with valid sigers -> accepted', async () => {
+    const store = new SimpleKeverStore();
+    const { signer, nextDigest } = await makeKeypair();
+
+    const icpSerder = incept({
+      keys: [signer.verfer.qb64],
+      nextDigests: [nextDigest.qb64],
+    });
+    await processEvent(icpSerder, store);
+
+    const ixnSerder = interact({
+      prefix: icpSerder.pre,
+      priorDigest: icpSerder.said,
+      sn: 1,
+    });
+
+    const sigRaw = await signer.sign(ixnSerder.raw);
+    const siger = Siger.create({ raw: sigRaw, index: 0 });
+
+    const result = await processEvent(ixnSerder, store, [siger]);
+    expect(result).toEqual({
+      status: 'accepted',
+      aid: icpSerder.pre,
+      sn: 1,
+      said: ixnSerder.said,
+    });
+  });
+
+  it('interaction with bad sigers -> rejected', async () => {
+    const store = new SimpleKeverStore();
+    const kp = await makeKeypair();
+
+    const icpSerder = incept({
+      keys: [kp.signer.verfer.qb64],
+      nextDigests: [kp.nextDigest.qb64],
+    });
+    await processEvent(icpSerder, store);
+
+    const ixnSerder = interact({
+      prefix: icpSerder.pre,
+      priorDigest: icpSerder.said,
+      sn: 1,
+    });
+
+    // Sign with the wrong key
+    const wrongSigRaw = await kp.nextSigner.sign(ixnSerder.raw);
+    const badSiger = Siger.create({ raw: wrongSigRaw, index: 0 });
+
+    const result = await processEvent(ixnSerder, store, [badSiger]);
+    expect(result.status).toBe('rejected');
+    if (result.status === 'rejected') {
+      expect(result.reason).toContain('threshold not satisfied');
+    }
+  });
+
+  it('existing tests without sigers still work (backward compat)', async () => {
+    const store = new SimpleKeverStore();
+    const { signer, nextDigest } = await makeKeypair();
+    const serder = incept({
+      keys: [signer.verfer.qb64],
+      nextDigests: [nextDigest.qb64],
+    });
+
+    // No sigers argument -- should still accept
+    const result = await processEvent(serder, store);
+    expect(result.status).toBe('accepted');
   });
 });

@@ -116,6 +116,9 @@ export type {
   BadaRecord,
 } from '@kerizon/discovery';
 
+export { verifySignatures } from './establishment/verify-sigs.js';
+export type { SigVerificationResult } from './establishment/verify-sigs.js';
+
 export { EscrowStore } from './identity/escrow.js';
 export { processEvent } from './identity/process.js';
 export type { KeverStore } from './identity/process.js';
