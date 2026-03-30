@@ -128,3 +128,8 @@ export { classifyPrivacyLevel, validateDisclosure } from './privacy/disclosure.j
 export type { PrivacyLevel, DisclosureType, DisclosureRequest } from './privacy/types.js';
 
 export { WatcherService } from './watcher-service/orchestrator.js';
+
+export type { LocalAgentPort } from './local-agent/types.js';
+
+export type { AgentConfig, CloudAgentPort } from './cloud-agent/types.js';
+export { AgentManager } from './cloud-agent/manager.js';
