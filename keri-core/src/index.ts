@@ -119,3 +119,12 @@ export { EscrowStore } from './identity/escrow.js';
 export { processEvent } from './identity/process.js';
 export type { KeverStore } from './identity/process.js';
 export type { EscrowType, EscrowedEvent, ProcessResult } from './identity/types.js';
+
+export { CredentialExchange } from './credential-exchange/orchestrator.js';
+
+export { CredentialLifecycle } from './credential-lifecycle/facade.js';
+
+export { classifyPrivacyLevel, validateDisclosure } from './privacy/disclosure.js';
+export type { PrivacyLevel, DisclosureType, DisclosureRequest } from './privacy/types.js';
+
+export { WatcherService } from './watcher-service/orchestrator.js';
