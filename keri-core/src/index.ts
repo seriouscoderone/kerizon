@@ -104,8 +104,7 @@ export { verifyCredentialArtifacts, verifyProofChain } from './credential-proof/
 export type { CredentialArtifacts, ProofChain } from './credential-proof/verify.js';
 export type { ProofResult, RegistryState } from './credential-proof/types.js';
 
-export { parseOobi, formatOobi } from './discovery/oobi.js';
-export { shouldAccept } from './discovery/bada.js';
+export { parseOobi, formatOobi, shouldAccept } from '@kerizon/discovery';
 export type {
   OobiRole,
   OobiParts,
@@ -115,7 +114,7 @@ export type {
   ResolvedEndpoint,
   BadaTier,
   BadaRecord,
-} from './discovery/types.js';
+} from '@kerizon/discovery';
 
 export { EscrowStore } from './identity/escrow.js';
 export { processEvent } from './identity/process.js';

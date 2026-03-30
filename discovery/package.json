@@ -1,5 +1,5 @@
 {
-  "name": "@kerizon/keri-core",
+  "name": "@kerizon/discovery",
   "version": "0.1.0",
   "type": "module",
   "main": "./dist/index.cjs",
@@ -16,10 +16,6 @@
     "build": "tsup src/index.ts --format esm,cjs --dts",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
-  },
-  "dependencies": {
-    "@kerizon/cesr": "file:../cesr",
-    "@kerizon/discovery": "file:../discovery"
   },
   "devDependencies": {
     "typescript": "^5.7.0",

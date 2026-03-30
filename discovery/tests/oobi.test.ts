@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseOobi, formatOobi } from '../../src/discovery/oobi.js';
+import { parseOobi, formatOobi } from '../src/oobi.js';
 
 describe('parseOobi', () => {
   it('extracts cid and role from standard URL', () => {

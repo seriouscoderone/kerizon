@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { shouldAccept } from '../../src/discovery/bada.js';
-import type { BadaRecord } from '../../src/discovery/types.js';
+import { shouldAccept } from '../src/bada.js';
+import type { BadaRecord } from '../src/types.js';
 
 describe('shouldAccept (BADA policy)', () => {
   it('accepts when no existing record', () => {
