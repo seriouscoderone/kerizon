@@ -6,6 +6,7 @@
  * functions work for both.
  */
 
+import { spawn } from 'node:child_process';
 import { resolve } from 'node:path';
 import type {
   CliAdapter,
@@ -25,6 +26,7 @@ import {
   parsePublicKeys,
   parseSignatures,
   parseVerifyResult,
+  parseOobiUrls,
   parseKeyState,
   parseVerboseEvents,
   parseIdentifierList,
@@ -122,6 +124,14 @@ export class KerizonAdapter implements CliAdapter {
     if (config.establishmentOnly) args.push('--est-only');
     if (config.delegator) args.push('--delpre', config.delegator);
 
+    if (config.witnesses) {
+      for (const w of config.witnesses) {
+        args.push('--wits', w);
+      }
+    }
+    if (config.witnessThreshold != null) args.push('--toad', String(config.witnessThreshold));
+    if (config.receiptEndpoint) args.push('--receipt-endpoint');
+
     const result = await this.run(args);
     const prefix = parsePrefix(result.stdout);
     return { ...result, prefix };
@@ -131,6 +141,7 @@ export class KerizonAdapter implements CliAdapter {
     const args = ['rotate', ...this.keystoreArgs(), '--alias', config.alias];
     if (config.nextKeyCount != null) args.push('--next-count', String(config.nextKeyCount));
     if (config.nextThreshold) args.push('--nsith', config.nextThreshold);
+    if (config.receiptEndpoint) args.push('--receipt-endpoint');
     return this.run(args);
   }
 
@@ -139,6 +150,7 @@ export class KerizonAdapter implements CliAdapter {
     if (config.data) {
       args.push('--data', JSON.stringify(config.data));
     }
+    if (config.receiptEndpoint) args.push('--receipt-endpoint');
     return this.run(args);
   }
 
@@ -209,12 +221,17 @@ export class KerizonAdapter implements CliAdapter {
 
   // ── OOBI ──
 
-  async oobiGenerate(_alias: string, _role: string): Promise<CliResult & { oobis?: string[] }> {
-    return { exitCode: 1, stdout: '', stderr: 'Not implemented', durationMs: 0 };
+  async oobiGenerate(alias: string, role: string): Promise<CliResult & { oobis?: string[] }> {
+    const args = ['oobi', 'generate', ...this.keystoreArgs(), '--alias', alias, '--role', role];
+    const result = await this.run(args);
+    const oobis = result.exitCode === 0 ? parseOobiUrls(result.stdout) : undefined;
+    return { ...result, oobis };
   }
 
-  async oobiResolve(_oobi: string, _alias?: string): Promise<CliResult> {
-    return { exitCode: 1, stdout: '', stderr: 'Not implemented', durationMs: 0 };
+  async oobiResolve(oobi: string, alias?: string): Promise<CliResult> {
+    const args = ['oobi', 'resolve', ...this.keystoreArgs(), '--oobi', oobi];
+    if (alias) args.push('--oobi-alias', alias);
+    return this.run(args);
   }
 
   // ── Event inspection ──
@@ -322,9 +339,69 @@ export class KerizonAdapter implements CliAdapter {
     return { exitCode: 1, stdout: '', stderr: 'Not implemented', durationMs: 0 };
   }
 
-  // ── Witnesses (not implemented) ──
+  // ── Witnesses ──
 
   async witnessDemo(): Promise<WitnessHandle> {
-    throw new Error('Witness demo not supported by kerizon CLI');
+    const cwd = this.useNode ? resolve(this.cliPath, '../..') : undefined;
+    const cmd = this.useNode ? 'node' : this.cliPath;
+    const args = this.useNode
+      ? [this.cliPath, 'witness', 'demo']
+      : ['witness', 'demo'];
+
+    return new Promise((resolve, reject) => {
+      const proc = spawn(cmd, args, {
+        stdio: ['pipe', 'pipe', 'pipe'],
+        detached: false,
+        cwd,
+      });
+
+      let started = false;
+      const collectedAids: Record<string, { aid: string; http: number }> = {};
+
+      // Parse witness AIDs from stdout
+      proc.stdout?.on('data', (data: Buffer) => {
+        const text = data.toString();
+        // Format: "Witness <name> (<aid>) on HTTP:<port> TCP:<tcpPort>"
+        const re = /Witness (\w+) \(([^)]+)\) on HTTP:(\d+)/g;
+        let m;
+        while ((m = re.exec(text)) !== null) {
+          collectedAids[m[1]] = { aid: m[2], http: parseInt(m[3], 10) };
+        }
+      });
+
+      // Wait for witnesses to start
+      const timer = setTimeout(() => {
+        if (!started) {
+          started = true;
+          resolve({
+            async stop() {
+              proc.kill('SIGTERM');
+              await new Promise<void>(r => {
+                proc.on('close', () => r());
+                setTimeout(() => {
+                  if (!proc.killed) proc.kill('SIGKILL');
+                  r();
+                }, 3000);
+              });
+            },
+            oobiUrls: Object.values(collectedAids).map(
+              w => `http://127.0.0.1:${w.http}/oobi/${w.aid}/controller`,
+            ),
+          });
+        }
+      }, 3000);
+
+      proc.on('error', (err) => {
+        clearTimeout(timer);
+        if (!started) reject(err);
+      });
+
+      proc.on('close', (code) => {
+        clearTimeout(timer);
+        if (!started) {
+          reject(new Error(`kerizon witness demo exited with code ${code} before starting`));
+        }
+      });
+    });
   }
 }

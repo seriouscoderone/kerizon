@@ -6,6 +6,7 @@
  */
 
 import { existsSync, mkdirSync, readFileSync } from 'node:fs';
+import http from 'node:http';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import {
@@ -42,6 +43,8 @@ const MULTI_WORD_COMMANDS = [
   'vc registry incept',
   'vc create',
   'vc list',
+  'oobi resolve',
+  'oobi generate',
   'witness start',
   'witness demo',
 ];
@@ -125,6 +128,73 @@ function saveStore(name: string, store: MemoryStore): void {
   store.save(storePath(name));
 }
 
+// ── Witness HTTP helpers ─────────────────────────────────────────
+
+function postToWitness(url: string, cesr: Buffer): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const u = new URL(url);
+    const req = http.request({
+      hostname: u.hostname,
+      port: u.port,
+      path: '/',
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/cesr',
+        'Content-Length': cesr.length,
+      },
+    }, (res) => {
+      // Consume the response body to avoid memory leaks
+      res.resume();
+      resolve(res.statusCode ?? 500);
+    });
+    req.on('error', reject);
+    req.write(cesr);
+    req.end();
+  });
+}
+
+function buildCesrPayload(serder: Serder, sigQb64s: string[]): Buffer {
+  const eventRaw = Buffer.from(serder.raw);
+  const countB64 = b64Index(Math.floor(sigQb64s.length / 64)) + b64Index(sigQb64s.length % 64);
+  const attachment = `${CtrDex.ControllerIdxSigs}${countB64}${sigQb64s.join('')}`;
+  return Buffer.concat([eventRaw, Buffer.from(attachment)]);
+}
+
+async function submitToWitnesses(
+  store: MemoryStore,
+  witnesses: string[],
+  serder: Serder,
+  sigQb64s: string[],
+): Promise<void> {
+  if (witnesses.length === 0) return;
+
+  process.stderr.write('Waiting for witness receipts...\n');
+
+  const cesr = buildCesrPayload(serder, sigQb64s);
+
+  const results = await Promise.all(
+    witnesses.map(async (witAid) => {
+      const baseUrl = store.getEndpoint(witAid);
+      if (!baseUrl) {
+        process.stderr.write(`Warning: no endpoint for witness ${witAid}, skipping\n`);
+        return { witAid, status: -1 };
+      }
+      const status = await postToWitness(baseUrl, cesr);
+      return { witAid, status };
+    }),
+  );
+
+  for (const r of results) {
+    if (r.status === 204) {
+      process.stderr.write(`Witness ${r.witAid}: receipt received\n`);
+    } else if (r.status === -1) {
+      // already warned above
+    } else {
+      process.stderr.write(`Witness ${r.witAid}: unexpected status ${r.status}\n`);
+    }
+  }
+}
+
 // ── Commands ──────────────────────────────────────────────────────
 
 async function cmdInit(flags: Record<string, string[]>): Promise<void> {
@@ -169,6 +239,8 @@ async function cmdIncept(flags: Record<string, string[]>): Promise<void> {
   }
   const estOnly = hasFlag(flags, 'est-only');
   const delpre = getFlag(flags, 'delpre');
+  const wits = getFlagAll(flags, 'wits');
+  const toad = getIntFlag(flags, 'toad', 0);
 
   // Generate current signing keypairs
   const currentSigners: Signer[] = [];
@@ -197,6 +269,8 @@ async function cmdIncept(flags: Record<string, string[]>): Promise<void> {
     nextDigests,
     signingThreshold: isith,
     nextThreshold: nsith,
+    witnesses: wits,
+    witnessThreshold: toad,
     configTraits,
     delegator: delpre,
   });
@@ -223,6 +297,11 @@ async function cmdIncept(flags: Record<string, string[]>): Promise<void> {
   const kever = Kever.fromInception(serder);
   store.putKever(prefix, kever);
   saveStore(name, store);
+
+  // Submit to witnesses if --receipt-endpoint
+  if (hasFlag(flags, 'receipt-endpoint') && wits.length > 0) {
+    await submitToWitnesses(store, wits, serder, sigQb64s);
+  }
 
   // Output (matches kli format)
   process.stdout.write(`Prefix  ${prefix}\n`);
@@ -313,6 +392,11 @@ async function cmdRotate(flags: Record<string, string[]>): Promise<void> {
   store.putKever(prefix, newKever);
   saveStore(name, store);
 
+  // Submit to witnesses if --receipt-endpoint
+  if (hasFlag(flags, 'receipt-endpoint') && kever.witnesses.length > 0) {
+    await submitToWitnesses(store, kever.witnesses, serder, sigQb64s);
+  }
+
   // Output
   process.stdout.write(`Prefix  ${prefix}\n`);
   process.stdout.write(`New Sequence No.  ${newSn}\n`);
@@ -391,6 +475,11 @@ async function cmdInteract(flags: Record<string, string[]>): Promise<void> {
   const newKever = kever.applyInteraction(serder);
   store.putKever(prefix, newKever);
   saveStore(name, store);
+
+  // Submit to witnesses if --receipt-endpoint
+  if (hasFlag(flags, 'receipt-endpoint') && kever.witnesses.length > 0) {
+    await submitToWitnesses(store, kever.witnesses, serder, sigQb64s);
+  }
 
   // Output
   const currentKeys = currentSigners.map(s => s.verfer.qb64);
@@ -925,6 +1014,115 @@ async function cmdVcList(flags: Record<string, string[]>): Promise<void> {
   }
 }
 
+async function cmdOobiResolve(flags: Record<string, string[]>): Promise<void> {
+  const name = getFlag(flags, 'name');
+  const oobi = getFlag(flags, 'oobi');
+  const oobiAlias = getFlag(flags, 'oobi-alias');
+  if (!name || !oobi) {
+    process.stderr.write('Error: --name and --oobi are required\n');
+    process.exit(1);
+  }
+
+  const store = loadStore(name);
+
+  // Fetch the OOBI URL (GET request)
+  const oobiUrl = new URL(oobi);
+  const response = await new Promise<{ statusCode: number; body: string }>((resolve, reject) => {
+    http.get(oobi, (res) => {
+      const chunks: Buffer[] = [];
+      res.on('data', (chunk: Buffer) => chunks.push(chunk));
+      res.on('end', () => {
+        resolve({
+          statusCode: res.statusCode ?? 500,
+          body: Buffer.concat(chunks).toString('utf-8'),
+        });
+      });
+      res.on('error', reject);
+    }).on('error', reject);
+  });
+
+  if (response.statusCode !== 200) {
+    process.stderr.write(`Error: OOBI fetch returned status ${response.statusCode}\n`);
+    process.exit(1);
+  }
+
+  // Parse the response body as a KERI event (JSON)
+  let ked: Record<string, unknown>;
+  try {
+    ked = JSON.parse(response.body);
+  } catch {
+    process.stderr.write('Error: OOBI response is not valid JSON\n');
+    process.exit(1);
+  }
+
+  const witPrefix = (ked['i'] as string) ?? '';
+  if (!witPrefix) {
+    process.stderr.write('Error: OOBI event has no prefix (i field)\n');
+    process.exit(1);
+  }
+
+  // Store the witness inception event so we know the AID
+  const witSerder = Serder.fromKed(ked);
+  const witKever = Kever.fromInception(witSerder);
+  store.appendEvent(witPrefix, witSerder, []);
+  store.putKever(witPrefix, witKever);
+
+  // Store the endpoint mapping: AID → base URL (scheme + host + port)
+  const baseUrl = `${oobiUrl.protocol}//${oobiUrl.host}`;
+  store.putEndpoint(witPrefix, baseUrl);
+
+  // Store alias mapping if provided
+  if (oobiAlias) {
+    store.setAlias(oobiAlias, witPrefix);
+  }
+
+  saveStore(name, store);
+
+  process.stdout.write(`Resolved: ${witPrefix}\n`);
+  process.stdout.write(`Endpoint: ${baseUrl}\n`);
+  if (oobiAlias) {
+    process.stdout.write(`Alias: ${oobiAlias}\n`);
+  }
+}
+
+async function cmdOobiGenerate(flags: Record<string, string[]>): Promise<void> {
+  const name = getFlag(flags, 'name');
+  const alias = getFlag(flags, 'alias');
+  const role = getFlag(flags, 'role') ?? 'witness';
+  if (!name || !alias) {
+    process.stderr.write('Error: --name and --alias are required\n');
+    process.exit(1);
+  }
+
+  const store = loadStore(name);
+  const prefix = store.getPrefix(alias);
+  if (!prefix) {
+    process.stderr.write(`Error: alias "${alias}" not found\n`);
+    process.exit(1);
+  }
+
+  const kever = store.getKever(prefix);
+  if (!kever) {
+    process.stderr.write(`Error: no key state for prefix "${prefix}"\n`);
+    process.exit(1);
+  }
+
+  if (role === 'witness') {
+    // For each witness, look up its stored URL and output the OOBI URL
+    for (const witAid of kever.witnesses) {
+      const baseUrl = store.getEndpoint(witAid);
+      if (baseUrl) {
+        process.stdout.write(`${baseUrl}/oobi/${prefix}/witness\n`);
+      } else {
+        process.stderr.write(`Warning: no endpoint for witness ${witAid}\n`);
+      }
+    }
+  } else {
+    process.stderr.write(`Error: unsupported role "${role}"\n`);
+    process.exit(1);
+  }
+}
+
 async function cmdWitnessStart(flags: Record<string, string[]>): Promise<void> {
   const name = getFlag(flags, 'name') ?? 'witness';
   const httpPort = getIntFlag(flags, 'http', 5642);
@@ -1036,6 +1234,12 @@ async function main(): Promise<void> {
       case 'vc list':
         await cmdVcList(flags);
         break;
+      case 'oobi resolve':
+        await cmdOobiResolve(flags);
+        break;
+      case 'oobi generate':
+        await cmdOobiGenerate(flags);
+        break;
       case 'witness start':
         await cmdWitnessStart(flags);
         break;
@@ -1048,7 +1252,7 @@ async function main(): Promise<void> {
       default:
         process.stderr.write(`Unknown command: ${command}\n`);
         process.stderr.write('Usage: kerizon <command> [options]\n');
-        process.stderr.write('Commands: init, incept, rotate, interact, status, sign, verify, list, export, import, event, vc registry incept, vc create, vc list, witness start, witness demo, version\n');
+        process.stderr.write('Commands: init, incept, rotate, interact, status, sign, verify, list, export, import, event, vc registry incept, vc create, vc list, oobi resolve, oobi generate, witness start, witness demo, version\n');
         process.exit(1);
     }
   } catch (err: unknown) {

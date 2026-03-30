@@ -61,6 +61,7 @@ interface StoreData {
   identities: Record<string, SerializedIdentity>; // prefix → signing keys
   registries: Record<string, SerializedRegistry>;  // registry name → metadata
   credentials: Record<string, SerializedCredential>; // credential SAID → data
+  endpoints: Record<string, string>;           // AID → base URL
 }
 
 // ── Store interface ───────────────────────────────────────────────
@@ -87,6 +88,9 @@ export interface Store {
   getCredential(said: string): SerializedCredential | undefined;
   listCredentials(): SerializedCredential[];
 
+  putEndpoint(aid: string, url: string): void;
+  getEndpoint(aid: string): string | null;
+
   save(path: string): void;
 }
 
@@ -99,6 +103,7 @@ export class MemoryStore implements Store {
   private identities: Map<string, SerializedIdentity> = new Map();
   private registries: Map<string, SerializedRegistry> = new Map();
   private credentials: Map<string, SerializedCredential> = new Map();
+  private endpoints: Map<string, string> = new Map();
 
   appendEvent(prefix: string, serder: Serder, sigs: string[]): void {
     if (!this.events.has(prefix)) {
@@ -198,6 +203,14 @@ export class MemoryStore implements Store {
     return Array.from(this.credentials.values());
   }
 
+  putEndpoint(aid: string, url: string): void {
+    this.endpoints.set(aid, url);
+  }
+
+  getEndpoint(aid: string): string | null {
+    return this.endpoints.get(aid) ?? null;
+  }
+
   save(path: string): void {
     const dir = dirname(path);
     if (!existsSync(dir)) {
@@ -210,6 +223,7 @@ export class MemoryStore implements Store {
       identities: Object.fromEntries(this.identities),
       registries: Object.fromEntries(this.registries),
       credentials: Object.fromEntries(this.credentials),
+      endpoints: Object.fromEntries(this.endpoints),
     };
     writeFileSync(path, JSON.stringify(data, null, 2), 'utf-8');
   }
@@ -238,6 +252,9 @@ export class MemoryStore implements Store {
     }
     for (const [k, v] of Object.entries(data.credentials ?? {})) {
       store.credentials.set(k, v);
+    }
+    for (const [k, v] of Object.entries(data.endpoints ?? {})) {
+      store.endpoints.set(k, v);
     }
 
     return store;
