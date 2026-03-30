@@ -3,7 +3,7 @@ import type {
   SignifyResources,
   IdentifierResource,
   CredentialResource,
-} from '../../src/signify-client/resources.js';
+} from '../src/resources.js';
 
 describe('SignifyResources', () => {
   it('has all resource properties', () => {

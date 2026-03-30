@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { SimpleKeeper } from '../../src/signify-client/keeper.js';
+import { SimpleKeeper } from '../src/keeper.js';
 
 describe('SimpleKeeper', () => {
   it('create produces keeper with prefix', async () => {

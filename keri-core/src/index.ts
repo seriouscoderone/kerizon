@@ -132,14 +132,3 @@ export { computeSadPathDigest, computeAggregate, verifyInclusion } from './priva
 
 export { WatcherService } from '@kerizon/watcher';
 
-export type { SecurityTier, Keeper, SignifyClient } from './signify-client/types.js';
-export { SimpleKeeper } from './signify-client/keeper.js';
-export type {
-  IdentifierResource,
-  CredentialResource,
-  RegistryResource,
-  ExchangeResource,
-  OobiResource,
-  SignifyResources,
-} from './signify-client/resources.js';
-
