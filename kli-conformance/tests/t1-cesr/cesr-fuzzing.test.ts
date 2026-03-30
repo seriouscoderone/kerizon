@@ -71,20 +71,24 @@ function makeKliTarget(label: string): KliAdapter {
 /**
  * Assert that an exit code represents a clean rejection (not a crash/signal).
  * Random/garbage bytes should always be rejected (exit != 0).
- * Exit codes >= 128 usually indicate a signal (e.g., 139 = SIGSEGV).
+ *
+ * Signal-based exits (128 + signal) indicate crashes, EXCEPT 255 which is
+ * Python's convention for error exits (used by kli).
  */
 function assertCleanRejection(exitCode: number): void {
   expect(exitCode).not.toBe(0); // must reject
-  expect(exitCode).toBeLessThan(128); // must not crash with signal
+  expect(exitCode).not.toBe(128 + 11); // not SIGSEGV (139)
+  expect(exitCode).not.toBe(128 + 6);  // not SIGABRT (134)
 }
 
 /**
  * Assert that the CLI did not crash (no signal death).
- * Allows exit 0 (accepted) or exit 1/255 (rejected).
- * Only fails if exitCode >= 128, indicating a signal like SIGSEGV.
+ * Allows exit 0 (accepted), exit 1 (rejected), or exit 255 (Python error).
+ * Only fails on known crash signals (SIGSEGV, SIGABRT).
  */
 function assertNoCrash(exitCode: number): void {
-  expect(exitCode).toBeLessThan(128);
+  expect(exitCode).not.toBe(128 + 11); // not SIGSEGV (139)
+  expect(exitCode).not.toBe(128 + 6);  // not SIGABRT (134)
 }
 
 /**

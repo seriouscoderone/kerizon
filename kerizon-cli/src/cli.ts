@@ -771,13 +771,15 @@ async function cmdImport(flags: Record<string, string[]>): Promise<void> {
       if (!kever) {
         throw new Error(`No key state for prefix ${prefix} — cannot apply ${ilk} without prior inception`);
       }
-      // Verify signatures against current key state
+      // Verify signatures against keys declared in the rotation event itself.
+      // Rotation events are signed by the pre-committed next keys (now current),
+      // which are listed in serder.ked['k'], not the prior Kever's currentKeys.
       if (msg.sigers.length > 0) {
         const sigResult = await verifySignatures(
           serder.raw,
           msg.sigers,
-          kever.currentKeys,
-          kever.signingThreshold,
+          serder.ked['k'] as string[],
+          serder.ked['kt'] as string,
         );
         if (!sigResult.verified) {
           throw new Error(`Signature verification failed for ${ilk}: ${sigResult.reason}`);
