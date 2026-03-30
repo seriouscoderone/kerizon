@@ -1,3 +1,13 @@
+export type RegistryMode = 'blindable' | 'non-blindable';
+
+export interface RegistryRecord {
+  readonly registrySaid: string;
+  readonly issuerAid: string;
+  readonly name: string;
+  readonly mode: RegistryMode;
+  readonly createdAt: string;
+}
+
 export type CredentialState = 'NotIssued' | 'Issued' | 'Revoked';
 
 export interface CredentialStatus {

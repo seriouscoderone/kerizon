@@ -69,8 +69,9 @@ export type {
 export { createRegistry, createUpdate } from './credential-lifecycle/registry.js';
 export type { CreateRegistryConfig, CreateUpdateConfig } from './credential-lifecycle/registry.js';
 export { TelStateMachine } from './credential-lifecycle/tel.js';
+export { RegistryManager } from './credential-lifecycle/manager.js';
 export { TEL_VALID_TRANSITIONS } from './credential-lifecycle/types.js';
-export type { CredentialState, CredentialStatus } from './credential-lifecycle/types.js';
+export type { CredentialState, CredentialStatus, RegistryMode, RegistryRecord } from './credential-lifecycle/types.js';
 
 export { detectFork, isForked } from './evidence/detect.js';
 export type { EventRef } from './evidence/detect.js';
