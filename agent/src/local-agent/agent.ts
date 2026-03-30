@@ -3,9 +3,9 @@
  * This is what kerizon-cli wraps.
  */
 
-import type { CredentialLifecycle } from '../credential-lifecycle/facade.js';
-import type { CredentialExchange } from '../credential-exchange/orchestrator.js';
-import type { WatcherService } from '../watcher-service/orchestrator.js';
+import type { CredentialLifecycle } from '@kerizon/keri-core';
+import type { CredentialExchange } from '@kerizon/keri-core';
+import type { WatcherService } from '@kerizon/keri-core';
 
 export interface LocalAgentIdentity {
   /** All managed identifier prefixes. */

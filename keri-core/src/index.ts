@@ -42,8 +42,8 @@ export type {
   ReplyConfig,
 } from './messaging/types.js';
 
-export { createDuplicityStatus } from './watcher/types.js';
-export type { DuplicityStatus, WatcherPort } from './watcher/types.js';
+export { createDuplicityStatus } from '@kerizon/watcher';
+export type { DuplicityStatus, WatcherPort } from '@kerizon/watcher';
 
 export { createDelegatedInception, createDelegationSeal } from './delegation/create.js';
 export { verifyDelegationSeal, findDelegationSeal } from './delegation/verify.js';
@@ -73,19 +73,19 @@ export { RegistryManager } from './credential-lifecycle/manager.js';
 export { TEL_VALID_TRANSITIONS } from './credential-lifecycle/types.js';
 export type { CredentialState, CredentialStatus, RegistryMode, RegistryRecord } from './credential-lifecycle/types.js';
 
-export { detectFork, isForked } from './evidence/detect.js';
-export type { EventRef } from './evidence/detect.js';
-export type { ForkDetected } from './evidence/types.js';
+export { detectFork, isForked } from '@kerizon/watcher';
+export type { EventRef } from '@kerizon/watcher';
+export type { ForkDetected } from '@kerizon/watcher';
 
-export { DuplicityEventLog } from './integrity/del.js';
-export { SupersedingRule, canSupersede } from './integrity/superseding.js';
-export type { SupersedingCandidate } from './integrity/superseding.js';
+export { DuplicityEventLog } from '@kerizon/watcher';
+export { SupersedingRule, canSupersede } from '@kerizon/watcher';
+export type { SupersedingCandidate } from '@kerizon/watcher';
 export type {
   DuplicityEvidence,
   SupersedingRecoveryEvent,
   DisputedBranch,
   TrustDecision,
-} from './integrity/types.js';
+} from '@kerizon/watcher';
 
 export type {
   EventSubmissionResult,
@@ -130,11 +130,7 @@ export type { PrivacyLevel, DisclosureType, DisclosureRequest } from './privacy/
 export { computeBlid, deriveUuid, verifyBlid } from './privacy/blinding.js';
 export { computeSadPathDigest, computeAggregate, verifyInclusion } from './privacy/aggregation.js';
 
-export { WatcherService } from './watcher-service/orchestrator.js';
-
-export type { LocalAgentPort } from './local-agent/types.js';
-export { LocalAgent } from './local-agent/agent.js';
-export type { LocalAgentIdentity } from './local-agent/agent.js';
+export { WatcherService } from '@kerizon/watcher';
 
 export type { SecurityTier, Keeper, SignifyClient } from './signify-client/types.js';
 export { SimpleKeeper } from './signify-client/keeper.js';
@@ -147,6 +143,3 @@ export type {
   SignifyResources,
 } from './signify-client/resources.js';
 
-export type { AgentConfig, CloudAgentPort } from './cloud-agent/types.js';
-export { AgentManager } from './cloud-agent/manager.js';
-export type { BootEndpoint, AdminEndpoint, EventProcessor } from './cloud-agent/api.js';

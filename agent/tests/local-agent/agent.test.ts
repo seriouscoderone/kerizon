@@ -1,8 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { LocalAgent } from '../../src/local-agent/agent.js';
-import { CredentialLifecycle } from '../../src/credential-lifecycle/facade.js';
-import { CredentialExchange } from '../../src/credential-exchange/orchestrator.js';
-import { WatcherService } from '../../src/watcher-service/orchestrator.js';
+import { CredentialLifecycle } from '@kerizon/keri-core';
+import { CredentialExchange } from '@kerizon/keri-core';
+import { WatcherService } from '@kerizon/keri-core';
 
 describe('LocalAgent', () => {
   function createAgent() {
