@@ -7,25 +7,15 @@ const CLI_PATH = resolve(import.meta.dirname, '../../kerizon-cli/dist/cli.js');
 const KERIZON_CLI_DIR = resolve(import.meta.dirname, '../../kerizon-cli');
 
 let witnessProc: ChildProcess | undefined;
-let witnessAvailable = false;
 
-beforeAll(async () => {
-  // Start kerizon witness demo in background
-  try {
-    witnessProc = spawn('node', [CLI_PATH, 'witness', 'demo'], {
-      cwd: KERIZON_CLI_DIR,
-      stdio: ['pipe', 'pipe', 'pipe'],
-      detached: false,
-    });
-    // Wait for witness to be ready
-    await new Promise(resolve => setTimeout(resolve, 3000));
-    // Check if HTTP port responds
-    try {
-      execSync('curl -s -m2 -o /dev/null -w "%{http_code}" http://127.0.0.1:5642/', { timeout: 3000 });
-      witnessAvailable = true;
-    } catch { witnessAvailable = false; }
-  } catch { witnessAvailable = false; }
-}, 15000);
+// Synchronous detection at module load time
+let witnessAvailable = false;
+try {
+  const code = execSync('curl -s -m2 -o /dev/null -w "%{http_code}" http://127.0.0.1:5642/', {
+    encoding: 'utf-8', timeout: 3000, stdio: ['pipe', 'pipe', 'pipe'],
+  }).trim();
+  witnessAvailable = code !== '000';
+} catch { witnessAvailable = false; }
 
 afterAll(async () => {
   if (witnessProc) {
