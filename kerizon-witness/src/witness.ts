@@ -5,7 +5,7 @@
  * KERI events, producing receipts signed by the witness key.
  */
 
-import { Signer, Siger, Serder, parseStream, MtrDex, CtrDex_1_0, encodeB64, b64Index } from '@kerizon/cesr';
+import { Signer, Siger, Serder, parseStream, MtrDex, CtrDex_1_0, encodeB64, b64Index, Matter, Diger, makeVersionString } from '@kerizon/cesr';
 import { incept, Kever, processEvent as applyEvent, type KeverStore } from '@kerizon/keri-core';
 import type { WitnessStore } from './store/types.js';
 
@@ -51,12 +51,94 @@ function encodeCounter(code: string, count: number): string {
   return code + b64Index(Math.floor(count / 64) & 0x3f) + b64Index(count & 0x3f);
 }
 
+/**
+ * Build an inception Serder for a non-transferable basic-prefix identifier.
+ *
+ * Unlike `Serder.fromKed()` which always sets `i = d` (SAID) for inception,
+ * this keeps `i` as the provided basic prefix (B-code verfer qb64) and only
+ * computes `d` as a SAID over the serialized KED.
+ *
+ * The algorithm iterates to converge on the correct version-string size and SAID:
+ * 1. Build KED with placeholder `d`, correct `i`, and a guess at the version string
+ * 2. Hash to get SAID for `d`
+ * 3. Fix the version string size with the actual serialized length
+ * 4. Re-hash with the corrected size to get the final stable SAID
+ */
+function buildBasicInception(prefix: string, keyQb64: string): Serder {
+  const saidCode = MtrDex.Blake3_256; // 'E'
+  const placeholderLen = 44; // Blake3-256 qb64 full size
+  const dummy = '#'.repeat(placeholderLen);
+
+  // Canonical field order matching ICP_FIELDS
+  const ked: Record<string, unknown> = {
+    v: '',
+    t: 'icp',
+    d: '',
+    i: prefix,
+    s: '0',
+    kt: '1',
+    k: [keyQb64],
+    nt: '0',
+    n: [],
+    bt: '0',
+    b: [],
+    c: [],
+    a: [],
+  };
+
+  // Iterate to converge on stable SAID + size (3 passes)
+  for (let pass = 0; pass < 3; pass++) {
+    const currentSize = pass === 0
+      ? 0
+      : new TextEncoder().encode(JSON.stringify(ked)).length;
+
+    ked['v'] = makeVersionString({
+      protocol: 'KERI',
+      major: 1,
+      minor: 0,
+      kind: 'JSON',
+      size: currentSize,
+    });
+
+    // Replace only d with dummy (NOT i -- i stays as the basic prefix)
+    const template = { ...ked, d: dummy };
+    const ser = new TextEncoder().encode(JSON.stringify(template));
+    const said = Diger.digest(ser, saidCode).qb64;
+    ked['d'] = said;
+  }
+
+  // Final size fix
+  const serialized = JSON.stringify(ked);
+  const raw = new TextEncoder().encode(serialized);
+  const actualSize = raw.length;
+
+  // Check if size in version string matches
+  const sizeInVs = parseInt((ked['v'] as string).slice(10, 16), 16);
+  if (sizeInVs !== actualSize) {
+    ked['v'] = makeVersionString({
+      protocol: 'KERI',
+      major: 1,
+      minor: 0,
+      kind: 'JSON',
+      size: actualSize,
+    });
+    // Re-hash with final version string
+    const template = { ...ked, d: dummy };
+    const ser = new TextEncoder().encode(JSON.stringify(template));
+    ked['d'] = Diger.digest(ser, saidCode).qb64;
+  }
+
+  const finalRaw = new TextEncoder().encode(JSON.stringify(ked));
+  return Serder.fromRaw(finalRaw);
+}
+
 export class KerizonWitness {
   readonly prefix: string;
   private signer: Signer;
   private store: WitnessStore;
   private keverStore: MemoryKeverStore;
   private inceptionRaw: string;
+  private inceptionSig: string;
 
   private constructor(
     prefix: string,
@@ -64,12 +146,14 @@ export class KerizonWitness {
     store: WitnessStore,
     keverStore: MemoryKeverStore,
     inceptionRaw: string,
+    inceptionSig: string,
   ) {
     this.prefix = prefix;
     this.signer = signer;
     this.store = store;
     this.keverStore = keverStore;
     this.inceptionRaw = inceptionRaw;
+    this.inceptionSig = inceptionSig;
   }
 
   /**
@@ -91,6 +175,9 @@ export class KerizonWitness {
       // Restore own inception from store
       const events = await store.getEvents(prefix);
       const inceptionRaw = events.length > 0 ? events[0].raw : '';
+      const inceptionSig = events.length > 0 && events[0].sigs.length > 0
+        ? events[0].sigs[0]
+        : '';
 
       // Rebuild kever from stored inception
       if (inceptionRaw) {
@@ -99,22 +186,23 @@ export class KerizonWitness {
         keverStore.set(prefix, kever);
       }
 
-      return new KerizonWitness(prefix, signer, store, keverStore, inceptionRaw);
+      return new KerizonWitness(prefix, signer, store, keverStore, inceptionRaw, inceptionSig);
     }
 
     // Generate new keypair
     const signer = await Signer.generate();
-    const verfer = signer.verfer;
 
-    // Non-transferable inception: empty next digests, threshold '0'
-    const serder = incept({
-      keys: [verfer.qb64],
-      nextDigests: [],
-      nextThreshold: '0',
-      signingThreshold: '1',
-    });
+    // Create B-prefix (non-transferable Ed25519) for the witness.
+    // KERI requires non-transferable witnesses to use a basic prefix where
+    // the AID IS the public key (code 'B'), not a SAID-based prefix ('E').
+    const ntVerfer = new Matter({ code: MtrDex.Ed25519N, raw: signer.verfer.raw });
+    const prefix = ntVerfer.qb64; // 'B...' — 44-char basic prefix
 
-    const prefix = serder.pre; // SAID-based prefix starting with 'E'
+    // Build inception KED with i = basic prefix (not SAID).
+    // Serder.fromKed() cannot be used here because Saider.saidify() forces
+    // i = d for inception types. We compute the SAID for d only, keeping i
+    // as the basic prefix.
+    const serder = buildBasicInception(prefix, ntVerfer.qb64);
 
     // Sign our own inception
     const sigRaw = await signer.sign(serder.raw);
@@ -131,7 +219,7 @@ export class KerizonWitness {
     const kever = Kever.fromInception(serder);
     keverStore.set(prefix, kever);
 
-    return new KerizonWitness(prefix, signer, store, keverStore, rawJson);
+    return new KerizonWitness(prefix, signer, store, keverStore, rawJson, siger.qb64);
   }
 
   /**
@@ -189,15 +277,17 @@ export class KerizonWitness {
   /**
    * Return the CESR-encoded inception event for this witness, including
    * the controller-indexed-sig attachment.
+   *
+   * kli's OOBI resolver expects a full CESR message: JSON body followed by
+   * a `-AAB` (ControllerIdxSigs, 1 sig = 22 quadlets) counter + the signature.
    */
   getOwnKel(): string {
-    if (!this.inceptionRaw) return '';
+    if (!this.inceptionRaw || !this.inceptionSig) return '';
 
-    // Retrieve the stored sigs for our own inception
-    // For simplicity, reconstruct from stored data synchronously using
-    // the inception raw JSON + a -A counter wrapping the sig.
-    // We'll build this from the stored event in the constructor.
-    return this.inceptionRaw;
+    // Each Ed25519 indexed sig is 88 chars = 22 quadlets
+    const sigQuadlets = this.inceptionSig.length / 4;
+    const counter = encodeCounter(CtrDex_1_0.ControllerIdxSigs, sigQuadlets);
+    return this.inceptionRaw + counter + this.inceptionSig;
   }
 
   /**

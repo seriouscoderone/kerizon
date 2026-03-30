@@ -37,15 +37,15 @@ describe('KerizonWitness', () => {
     await rm(dbDir, { recursive: true, force: true });
   });
 
-  it('create() produces a witness with a prefix', async () => {
+  it('create() produces a witness with a B-prefix (non-transferable)', async () => {
     const witness = await KerizonWitness.create(
       { name: 'wit0', httpPort: 5632, tcpPort: 5633 },
       store,
     );
     expect(witness.prefix).toBeTruthy();
-    expect(witness.prefix.length).toBeGreaterThan(0);
-    // SAID-based prefix starts with 'E'
-    expect(witness.prefix[0]).toBe('E');
+    expect(witness.prefix.length).toBe(44);
+    // Non-transferable Ed25519 basic prefix starts with 'B'
+    expect(witness.prefix[0]).toBe('B');
   });
 
   it('prefix persists across restarts (same store)', async () => {
@@ -120,7 +120,7 @@ describe('KerizonWitness', () => {
     }
   });
 
-  it('getOwnKel returns CESR containing the witness inception', async () => {
+  it('getOwnKel returns CESR with JSON body + sig attachment', async () => {
     const witness = await KerizonWitness.create(
       { name: 'wit0', httpPort: 5632, tcpPort: 5633 },
       store,
@@ -129,11 +129,24 @@ describe('KerizonWitness', () => {
     const kel = witness.getOwnKel();
     expect(kel.length).toBeGreaterThan(0);
 
-    // Parse the raw JSON to verify it's a valid inception
-    const parsed = JSON.parse(kel);
+    // The CESR stream is: JSON body + counter + signature
+    // Extract the JSON portion (find first '}' that closes the KED)
+    const jsonEnd = kel.lastIndexOf('}') + 1;
+    const jsonPart = kel.slice(0, jsonEnd);
+    const attachPart = kel.slice(jsonEnd);
+
+    // Parse the JSON body
+    const parsed = JSON.parse(jsonPart);
     expect(parsed.t).toBe('icp');
     expect(parsed.i).toBe(witness.prefix);
-    expect(parsed.d).toBe(witness.prefix);
+    // For basic prefix: i is the B-code verfer, d is the SAID — they differ
+    expect(parsed.i[0]).toBe('B');
+    expect(parsed.d[0]).toBe('E');
+    expect(parsed.i).not.toBe(parsed.d);
+
+    // Attachment: -A counter (4 chars) + 88-char indexed sig = 92 chars
+    expect(attachPart.length).toBe(92);
+    expect(attachPart.startsWith('-A')).toBe(true);
   });
 
   it('getKel returns stored events', async () => {

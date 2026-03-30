@@ -86,14 +86,19 @@ describe('HTTP server', () => {
     await rm(dbDir, { recursive: true, force: true });
   });
 
-  it('GET /oobi/anything returns 200 with CESR body containing version string', async () => {
+  it('GET /oobi/anything returns 200 with CESR body (JSON + sig attachment)', async () => {
     const res = await httpGet(`${baseUrl}/oobi/anything`);
     expect(res.status).toBe(200);
     expect(res.body.length).toBeGreaterThan(0);
-    // The body is the witness inception JSON which has a "v" field
-    const parsed = JSON.parse(res.body);
+    // The body is a full CESR stream: JSON + counter + sig attachment.
+    // Extract the JSON portion before the attachment.
+    const jsonEnd = res.body.lastIndexOf('}') + 1;
+    const jsonPart = res.body.slice(0, jsonEnd);
+    const parsed = JSON.parse(jsonPart);
     expect(parsed.v).toBeDefined();
     expect(parsed.t).toBe('icp');
+    // Witness uses a B-prefix (non-transferable basic)
+    expect(parsed.i[0]).toBe('B');
   });
 
   it('POST / with valid CESR inception returns 204', async () => {

@@ -56,14 +56,16 @@ export class Kever {
   /**
    * Create a Kever from an inception event (icp or dip).
    *
-   * For inception events, `prefix = serder.said` because `i === d`.
+   * For self-addressing identifiers, `i === d` (SAID-based prefix).
+   * For basic (non-transferable) identifiers, `i` is the verfer qb64
+   * (e.g. B-code Ed25519N) and differs from `d`.
    */
   static fromInception(serder: Serder): Kever {
     const ked = serder.ked;
     const nextDigests = ked['n'] as string[];
 
     return new Kever({
-      prefix: serder.said,
+      prefix: serder.pre,
       sn: 0,
       currentKeys: ked['k'] as string[],
       signingThreshold: ked['kt'] as string,
