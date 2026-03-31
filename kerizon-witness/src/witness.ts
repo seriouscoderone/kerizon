@@ -8,6 +8,7 @@
 import { Signer, Siger, Serder, parseStream, MtrDex, CtrDex_1_0, encodeB64, b64Index, Matter, Diger, makeVersionString } from '@kerizon/cesr';
 import { incept, Kever, processEvent as applyEvent, reply, type KeverStore } from '@kerizon/keri-core';
 import type { WitnessStore } from './store/types.js';
+import type { WitnessHandler } from './ports.js';
 
 export interface WitnessConfig {
   name: string;
@@ -334,5 +335,36 @@ export class KerizonWitness {
     const events = await this.store.getEvents(prefix);
     if (events.length === 0) return null;
     return events.map(e => e.raw).join('');
+  }
+
+  /** Create a WitnessHandler for use with transport adapters. */
+  createHandler(): WitnessHandler {
+    return {
+      handleEventSubmission: async (cesr) => {
+        const result = await this.processEvent(cesr);
+        if ('receipt' in result) {
+          return { status: 204 };
+        }
+        return { status: 400, body: result.error };
+      },
+
+      handleOobiRequest: async (_path) => {
+        const body = await this.getOobiResponse();
+        return {
+          status: 200,
+          contentType: 'application/json+cesr',
+          headers: { 'KERI-AID': this.prefix },
+          body,
+        };
+      },
+
+      handleKelQuery: async (prefix) => {
+        const kel = await this.getKel(prefix);
+        if (kel) {
+          return { status: 200, body: kel };
+        }
+        return { status: 404 };
+      },
+    };
   }
 }

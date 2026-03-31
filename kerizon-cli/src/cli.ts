@@ -1170,24 +1170,24 @@ async function cmdWitnessStart(flags: Record<string, string[]>): Promise<void> {
 
   mkdirSync(dbPath, { recursive: true });
 
-  const { NedbStore, KerizonWitness, createWitnessHttpServer, createWitnessTcpServer } = await import('@kerizon/witness');
+  const { NedbStore, KerizonWitness } = await import('@kerizon/witness');
+  const { createHttpServer, createTcpServer } = await import('@kerizon/witness-node');
   const store = new NedbStore(dbPath);
   const witness = await KerizonWitness.create({ name, httpPort, tcpPort, dbPath }, store);
+  const handler = witness.createHandler();
 
-  const httpServer = createWitnessHttpServer(witness);
-  const tcpServer = createWitnessTcpServer(witness);
+  const httpServer = createHttpServer(handler);
+  const tcpServer = createTcpServer(handler);
 
-  httpServer.listen(httpPort, () => {
-    process.stdout.write(`Witness ${name} (${witness.prefix}) HTTP on port ${httpPort}\n`);
-  });
-  tcpServer.listen(tcpPort, () => {
-    process.stdout.write(`Witness ${name} (${witness.prefix}) TCP on port ${tcpPort}\n`);
-  });
+  await httpServer.listen(httpPort);
+  process.stdout.write(`Witness ${name} (${witness.prefix}) HTTP on port ${httpPort}\n`);
+  await tcpServer.listen(tcpPort);
+  process.stdout.write(`Witness ${name} (${witness.prefix}) TCP on port ${tcpPort}\n`);
 
   // Keep running until SIGTERM
   await new Promise<void>((resolve) => {
-    process.on('SIGTERM', () => { httpServer.close(); tcpServer.close(); resolve(); });
-    process.on('SIGINT', () => { httpServer.close(); tcpServer.close(); resolve(); });
+    process.on('SIGTERM', () => { httpServer.stop(); tcpServer.stop(); resolve(); });
+    process.on('SIGINT', () => { httpServer.stop(); tcpServer.stop(); resolve(); });
   });
 }
 
@@ -1198,19 +1198,21 @@ async function cmdWitnessDemo(flags: Record<string, string[]>): Promise<void> {
     { name: 'wes', httpPort: 5644, tcpPort: 5634 },
   ];
 
-  const { NedbStore, KerizonWitness, createWitnessHttpServer, createWitnessTcpServer } = await import('@kerizon/witness');
+  const { NedbStore, KerizonWitness } = await import('@kerizon/witness');
+  const { createHttpServer, createTcpServer } = await import('@kerizon/witness-node');
 
   for (const w of witnesses) {
     const dbPath = join(homedir(), '.kerizon-witness', w.name);
     mkdirSync(dbPath, { recursive: true });
     const store = new NedbStore(dbPath);
     const witness = await KerizonWitness.create({ ...w, dbPath }, store);
+    const handler = witness.createHandler();
 
-    const http = createWitnessHttpServer(witness);
-    const tcp = createWitnessTcpServer(witness);
+    const httpServer = createHttpServer(handler);
+    const tcpServer = createTcpServer(handler);
 
-    http.listen(w.httpPort);
-    tcp.listen(w.tcpPort);
+    await httpServer.listen(w.httpPort);
+    await tcpServer.listen(w.tcpPort);
     process.stdout.write(`Witness ${w.name} (${witness.prefix}) on HTTP:${w.httpPort} TCP:${w.tcpPort}\n`);
   }
 

@@ -1,8 +1,8 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import http from 'node:http';
-import { createWitnessHttpServer } from '../../src/server/http-server.js';
-import { KerizonWitness } from '../../src/witness.js';
-import { NedbStore } from '../../src/store/nedb-store.js';
+import { createHttpServer } from '../src/http-adapter.js';
+import { KerizonWitness, NedbStore } from '@kerizon/witness';
+import type { WitnessHandler } from '@kerizon/witness';
 import { tmpdir } from 'node:os';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -56,32 +56,30 @@ function buildCesr(serder: Serder, sigers: Siger[]): Uint8Array {
   return new TextEncoder().encode(full);
 }
 
-describe('HTTP server', () => {
+describe('HTTP adapter', () => {
   let dbDir: string;
   let store: NedbStore;
   let witness: KerizonWitness;
-  let server: http.Server;
+  let handler: WitnessHandler;
+  let server: { listen(port: number): Promise<void>; stop(): Promise<void> };
   let baseUrl: string;
+  const testPort = 19642 + Math.floor(Math.random() * 1000);
 
   beforeAll(async () => {
     dbDir = await mkdtemp(join(tmpdir(), 'witness-http-test-'));
     store = new NedbStore(dbDir);
     witness = await KerizonWitness.create(
-      { name: 'wit-http', httpPort: 0, tcpPort: 0 },
+      { name: 'wit-http', httpPort: testPort, tcpPort: 0 },
       store,
     );
-    server = createWitnessHttpServer(witness);
-    await new Promise<void>((resolve) => {
-      server.listen(0, '127.0.0.1', () => resolve());
-    });
-    const addr = server.address() as { port: number };
-    baseUrl = `http://127.0.0.1:${addr.port}`;
+    handler = witness.createHandler();
+    server = createHttpServer(handler);
+    await server.listen(testPort);
+    baseUrl = `http://127.0.0.1:${testPort}`;
   });
 
   afterAll(async () => {
-    await new Promise<void>((resolve, reject) => {
-      server.close((err) => (err ? reject(err) : resolve()));
-    });
+    await server.stop();
     await store.close();
     await rm(dbDir, { recursive: true, force: true });
   });
@@ -91,13 +89,7 @@ describe('HTTP server', () => {
     expect(res.status).toBe(200);
     expect(res.body.length).toBeGreaterThan(0);
 
-    // The response contains two CESR messages:
-    // 1. Inception event JSON + -A counter + indexed sig
-    // 2. /loc/scheme reply JSON + -C counter + prefix + cigar
-
     // Find the first JSON object (inception event)
-    const firstClose = res.body.indexOf('}') + 1;
-    // Walk past nested objects to find end of first JSON
     let depth = 0;
     let icpEnd = 0;
     for (let i = 0; i < res.body.length; i++) {
@@ -114,7 +106,6 @@ describe('HTTP server', () => {
     // After the inception + sig attachment, find the reply message
     // Skip past the -A counter (4 chars) + sig (88 chars) = 92 chars
     const afterIcp = icpEnd + 92;
-    // Find the reply JSON
     depth = 0;
     let rpyEnd = 0;
     for (let i = afterIcp; i < res.body.length; i++) {
@@ -167,12 +158,5 @@ describe('HTTP server', () => {
   it('GET /nonexistent returns 405', async () => {
     const res = await httpGet(`${baseUrl}/nonexistent`);
     expect(res.status).toBe(405);
-  });
-
-  it('server listens and closes cleanly', async () => {
-    // The server is already listening (beforeAll). Verify address is valid.
-    const addr = server.address();
-    expect(addr).not.toBeNull();
-    expect(typeof addr).toBe('object');
   });
 });
