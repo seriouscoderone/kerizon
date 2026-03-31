@@ -18,9 +18,10 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "nedb-promises": "^6.2.3",
     "@kerizon/cesr": "file:../cesr",
-    "@kerizon/keri-core": "file:../keri-core"
+    "@kerizon/keri-core": "file:../keri-core",
+    "@kerizon/store-nedb": "file:../store-nedb",
+    "@kerizon/store-memory": "file:../store-memory"
   },
   "devDependencies": {
     "typescript": "^5.7.0",

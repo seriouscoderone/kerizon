@@ -1,8 +1,9 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import http from 'node:http';
 import { createHttpServer } from '../src/http-adapter.js';
-import { KerizonWitness, NedbStore } from '@kerizon/witness';
-import type { WitnessHandler } from '@kerizon/witness';
+import { KerizonWitness } from '@kerizon/witness';
+import type { WitnessHandler, PersistencePort } from '@kerizon/witness';
+import { NedbPersistence } from '@kerizon/store-nedb';
 import { tmpdir } from 'node:os';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -58,7 +59,7 @@ function buildCesr(serder: Serder, sigers: Siger[]): Uint8Array {
 
 describe('HTTP adapter', () => {
   let dbDir: string;
-  let store: NedbStore;
+  let store: PersistencePort;
   let witness: KerizonWitness;
   let handler: WitnessHandler;
   let server: { listen(port: number): Promise<void>; stop(): Promise<void> };
@@ -67,7 +68,7 @@ describe('HTTP adapter', () => {
 
   beforeAll(async () => {
     dbDir = await mkdtemp(join(tmpdir(), 'witness-http-test-'));
-    store = new NedbStore(dbDir);
+    store = await NedbPersistence.create(dbDir);
     witness = await KerizonWitness.create(
       { name: 'wit-http', httpPort: testPort, tcpPort: 0 },
       store,

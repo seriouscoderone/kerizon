@@ -135,3 +135,6 @@ export { computeSadPathDigest, computeAggregate, verifyInclusion } from './priva
 
 export { WatcherService } from '@kerizon/watcher';
 
+export { MemoryPersistence } from './persistence/memory.js';
+export type { PersistencePort, SerializedKeyState } from './persistence/types.js';
+export { PersistenceKeverStore } from './persistence/adapters.js';

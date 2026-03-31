@@ -1,5 +1,5 @@
 {
-  "name": "@kerizon/witness-node",
+  "name": "@kerizon/store-memory",
   "version": "0.1.0",
   "type": "module",
   "main": "./dist/index.cjs",
@@ -18,15 +18,12 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@kerizon/witness": "file:../kerizon-witness"
+    "@kerizon/keri-core": "file:../keri-core"
   },
   "devDependencies": {
-    "@kerizon/cesr": "file:../cesr",
-    "@kerizon/keri-core": "file:../keri-core",
-    "@kerizon/store-nedb": "file:../store-nedb",
-    "@types/node": "^22.15.0",
-    "tsup": "^8.5.0",
     "typescript": "^5.7.0",
-    "vitest": "^3.1.0"
+    "vitest": "^3.1.0",
+    "tsup": "^8.5.0",
+    "@types/node": "^22.15.0"
   }
 }

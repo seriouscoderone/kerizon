@@ -6,8 +6,7 @@
  */
 
 import { Signer, Siger, Serder, parseStream, MtrDex, CtrDex_1_0, encodeB64, b64Index, Matter, Diger, makeVersionString } from '@kerizon/cesr';
-import { incept, Kever, processEvent as applyEvent, reply, type KeverStore } from '@kerizon/keri-core';
-import type { WitnessStore } from './store/types.js';
+import { incept, Kever, processEvent as applyEvent, reply, type KeverStore, type PersistencePort } from '@kerizon/keri-core';
 import type { WitnessHandler } from './ports.js';
 
 export interface WitnessConfig {
@@ -136,7 +135,7 @@ function buildBasicInception(prefix: string, keyQb64: string): Serder {
 export class KerizonWitness {
   readonly prefix: string;
   private signer: Signer;
-  private store: WitnessStore;
+  private store: PersistencePort;
   private keverStore: MemoryKeverStore;
   private inceptionRaw: string;
   private inceptionSig: string;
@@ -145,7 +144,7 @@ export class KerizonWitness {
   private constructor(
     prefix: string,
     signer: Signer,
-    store: WitnessStore,
+    store: PersistencePort,
     keverStore: MemoryKeverStore,
     inceptionRaw: string,
     inceptionSig: string,
@@ -167,7 +166,7 @@ export class KerizonWitness {
    * from the stored qb64. Otherwise a new Ed25519 keypair is generated and
    * a non-transferable inception event (empty nextDigests) is created.
    */
-  static async create(config: WitnessConfig, store: WitnessStore): Promise<KerizonWitness> {
+  static async create(config: WitnessConfig, store: PersistencePort): Promise<KerizonWitness> {
     const keverStore = new MemoryKeverStore();
     const existing = await store.getWitnessIdentity();
 

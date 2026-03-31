@@ -1,21 +1,23 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { describe, it, expect, beforeEach, afterAll } from 'vitest';
+import { mkdtempSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { NedbStore } from '../../src/store/nedb-store.js';
+import { NedbPersistence } from '@kerizon/store-nedb';
 
-describe('NedbStore', () => {
-  let dbDir: string;
-  let store: NedbStore;
+describe('NedbStore (via @kerizon/store-nedb)', () => {
+  const dirs: string[] = [];
+  let store: NedbPersistence;
 
   beforeEach(async () => {
-    dbDir = await mkdtemp(join(tmpdir(), 'nedb-store-test-'));
-    store = new NedbStore(dbDir);
+    const dbDir = mkdtempSync(join(tmpdir(), 'nedb-store-test-'));
+    dirs.push(dbDir);
+    store = await NedbPersistence.create(dbDir);
   });
 
-  afterEach(async () => {
-    await store.close();
-    await rm(dbDir, { recursive: true, force: true });
+  afterAll(() => {
+    for (const d of dirs) {
+      rmSync(d, { recursive: true, force: true });
+    }
   });
 
   it('putEvent + getEvents returns stored event', async () => {
@@ -36,7 +38,20 @@ describe('NedbStore', () => {
   });
 
   it('putKeyState + getKeyState round-trips', async () => {
-    const state = { sn: 0, prefix: 'EpfxABC', keys: ['Dkey1'] };
+    const state = {
+      sn: 0,
+      prefix: 'EpfxABC',
+      currentKeys: ['Dkey1'],
+      signingThreshold: '1',
+      nextDigests: [],
+      nextThreshold: '0',
+      witnesses: [],
+      witnessThreshold: 0,
+      configTraits: [],
+      transferable: true,
+      lastEstSn: 0,
+      lastEstSaid: 'Esaid0',
+    };
     await store.putKeyState('EpfxABC', state);
     const loaded = await store.getKeyState('EpfxABC');
     expect(loaded).toEqual(state);
@@ -93,10 +108,23 @@ describe('NedbStore', () => {
   });
 
   it('putKeyState upserts on same prefix', async () => {
-    await store.putKeyState('Epfx', { sn: 0 });
-    await store.putKeyState('Epfx', { sn: 1 });
+    const base = {
+      prefix: 'Epfx',
+      currentKeys: ['Dkey1'],
+      signingThreshold: '1',
+      nextDigests: [],
+      nextThreshold: '0',
+      witnesses: [],
+      witnessThreshold: 0,
+      configTraits: [],
+      transferable: true,
+      lastEstSn: 0,
+      lastEstSaid: 'Esaid0',
+    };
+    await store.putKeyState('Epfx', { ...base, sn: 0 });
+    await store.putKeyState('Epfx', { ...base, sn: 1 });
     const loaded = await store.getKeyState('Epfx');
-    expect(loaded).toEqual({ sn: 1 });
+    expect(loaded!.sn).toBe(1);
   });
 
   it('putWitnessIdentity upserts', async () => {

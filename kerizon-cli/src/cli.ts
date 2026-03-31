@@ -31,8 +31,10 @@ import {
   createRegistry,
   createUpdate,
   verifySignatures,
+  type PersistencePort,
+  type SerializedKeyState,
 } from '@kerizon/keri-core';
-import { MemoryStore } from './store/memory-store.js';
+import { NedbPersistence } from '@kerizon/store-nedb';
 
 // ── Arg parsing ───────────────────────────────────────────────────
 
@@ -113,20 +115,53 @@ function getIntFlag(flags: Record<string, string[]>, key: string, defaultVal: nu
 
 // ── Store path ────────────────────────────────────────────────────
 
-function storePath(name: string): string {
-  return join(homedir(), '.kerizon', name, 'store.json');
-}
-
 function storeDir(name: string): string {
   return join(homedir(), '.kerizon', name);
 }
 
-function loadStore(name: string): MemoryStore {
-  return MemoryStore.load(storePath(name));
+async function openStore(name: string): Promise<PersistencePort> {
+  const dir = storeDir(name);
+  if (!existsSync(dir)) {
+    mkdirSync(dir, { recursive: true });
+  }
+  return NedbPersistence.create(dir);
 }
 
-function saveStore(name: string, store: MemoryStore): void {
-  store.save(storePath(name));
+/** Serialize a Kever to a SerializedKeyState record. */
+function serializeKever(kever: Kever): SerializedKeyState {
+  return {
+    prefix: kever.prefix,
+    sn: kever.sn,
+    currentKeys: kever.currentKeys,
+    signingThreshold: kever.signingThreshold,
+    nextDigests: kever.nextDigests,
+    nextThreshold: kever.nextThreshold,
+    witnesses: kever.witnesses,
+    witnessThreshold: kever.witnessThreshold,
+    configTraits: kever.configTraits,
+    transferable: kever.transferable,
+    lastEstSn: kever.lastEstSn,
+    lastEstSaid: kever.lastEstSaid,
+    delegator: kever.delegator,
+  };
+}
+
+/** Rebuild a Kever from events stored via PersistencePort. */
+async function rebuildKever(store: PersistencePort, prefix: string): Promise<Kever | undefined> {
+  const events = await store.getEvents(prefix);
+  if (events.length === 0) return undefined;
+
+  let kever = Kever.fromInception(Serder.fromRaw(new TextEncoder().encode(events[0].raw)));
+  for (let i = 1; i < events.length; i++) {
+    const serder = Serder.fromRaw(new TextEncoder().encode(events[i].raw));
+    const ilk = serder.ilk;
+    if (ilk === 'rot' || ilk === 'drt') {
+      kever = kever.applyEstablishment(serder);
+    } else if (ilk === 'ixn') {
+      kever = kever.applyInteraction(serder);
+    }
+  }
+  return kever;
 }
 
 // ── Witness HTTP helpers ─────────────────────────────────────────
@@ -162,7 +197,7 @@ function buildCesrPayload(serder: Serder, sigQb64s: string[]): Buffer {
 }
 
 async function submitToWitnesses(
-  store: MemoryStore,
+  store: PersistencePort,
   witnesses: string[],
   serder: Serder,
   sigQb64s: string[],
@@ -175,7 +210,7 @@ async function submitToWitnesses(
 
   const results = await Promise.all(
     witnesses.map(async (witAid) => {
-      const baseUrl = store.getEndpoint(witAid);
+      const baseUrl = await store.getEndpoint(witAid);
       if (!baseUrl) {
         process.stderr.write(`Warning: no endpoint for witness ${witAid}, skipping\n`);
         return { witAid, status: -1 };
@@ -210,12 +245,11 @@ async function cmdInit(flags: Record<string, string[]>): Promise<void> {
     mkdirSync(dir, { recursive: true });
   }
 
-  // Create an empty store
-  const store = new MemoryStore();
-  saveStore(name, store);
+  // Create the store (NeDB files are created on first use)
+  const store = await openStore(name);
+  await store.close();
 
-  const path = storePath(name);
-  process.stdout.write(`KERI Keystore created at: ${path}\n`);
+  process.stdout.write(`KERI Keystore created at: ${dir}\n`);
 }
 
 async function cmdIncept(flags: Record<string, string[]>): Promise<void> {
@@ -226,7 +260,7 @@ async function cmdIncept(flags: Record<string, string[]>): Promise<void> {
     process.exit(1);
   }
 
-  const store = loadStore(name);
+  const store = await openStore(name);
 
   const transferable = hasFlag(flags, 'transferable');
   const icount = getIntFlag(flags, 'icount', 1);
@@ -287,21 +321,23 @@ async function cmdIncept(flags: Record<string, string[]>): Promise<void> {
 
   // Store everything
   const prefix = serder.said;
-  store.appendEvent(prefix, serder, sigQb64s);
-  store.setAlias(alias, prefix);
-  store.setSigners(
-    prefix,
+  const rawJson = new TextDecoder().decode(serder.raw);
+  await store.putEvent(prefix, serder.sn, serder.said, rawJson, sigQb64s);
+  await store.putAlias(alias, prefix);
+  await store.putSigners(prefix, {
     alias,
-    currentSigners.map(s => s.qb64),
-    nextSigners.map(s => s.qb64),
-  );
+    currentQb64s: currentSigners.map(s => s.qb64),
+    nextQb64s: nextSigners.map(s => s.qb64),
+  });
   const kever = Kever.fromInception(serder);
-  store.putKever(prefix, kever);
-  saveStore(name, store);
+  await store.putKeyState(prefix, serializeKever(kever));
+  await store.close();
 
   // Submit to witnesses if --receipt-endpoint
   if (hasFlag(flags, 'receipt-endpoint') && wits.length > 0) {
-    await submitToWitnesses(store, wits, serder, sigQb64s);
+    const store2 = await openStore(name);
+    await submitToWitnesses(store2, wits, serder, sigQb64s);
+    await store2.close();
   }
 
   // Output (matches kli format)
@@ -319,31 +355,35 @@ async function cmdRotate(flags: Record<string, string[]>): Promise<void> {
     process.exit(1);
   }
 
-  const store = loadStore(name);
-  const prefix = store.getPrefix(alias);
+  const store = await openStore(name);
+  const prefix = await store.getPrefix(alias);
   if (!prefix) {
     process.stderr.write(`Error: alias "${alias}" not found\n`);
+    await store.close();
     process.exit(1);
   }
 
-  const kever = store.getKever(prefix);
+  const kever = await rebuildKever(store, prefix);
   if (!kever) {
     process.stderr.write(`Error: no key state for prefix "${prefix}"\n`);
+    await store.close();
     process.exit(1);
   }
 
   if (!kever.transferable) {
+    await store.close();
     throw new Error('non-transferable identifier cannot be rotated');
   }
 
-  const identity = store.getIdentity(prefix);
+  const identity = await store.getSigners(prefix);
   if (!identity) {
     process.stderr.write(`Error: no identity data for prefix "${prefix}"\n`);
+    await store.close();
     process.exit(1);
   }
 
   // The "next" keys from the previous event become the current keys
-  const currentSigners: Signer[] = identity.nextSignerQb64s.map(
+  const currentSigners: Signer[] = identity.nextQb64s.map(
     qb64 => new Signer({ qb64 }),
   );
   const currentKeys = currentSigners.map(s => s.verfer.qb64);
@@ -382,21 +422,22 @@ async function cmdRotate(flags: Record<string, string[]>): Promise<void> {
   const sigQb64s = sigers.map(s => s.qb64);
 
   // Update store
-  store.appendEvent(prefix, serder, sigQb64s);
-  store.setSigners(
-    prefix,
+  const rawJson = new TextDecoder().decode(serder.raw);
+  await store.putEvent(prefix, serder.sn, serder.said, rawJson, sigQb64s);
+  await store.putSigners(prefix, {
     alias,
-    currentSigners.map(s => s.qb64),
-    nextSigners.map(s => s.qb64),
-  );
+    currentQb64s: currentSigners.map(s => s.qb64),
+    nextQb64s: nextSigners.map(s => s.qb64),
+  });
   const newKever = kever.applyEstablishment(serder);
-  store.putKever(prefix, newKever);
-  saveStore(name, store);
+  await store.putKeyState(prefix, serializeKever(newKever));
 
   // Submit to witnesses if --receipt-endpoint
   if (hasFlag(flags, 'receipt-endpoint') && kever.witnesses.length > 0) {
     await submitToWitnesses(store, kever.witnesses, serder, sigQb64s);
   }
+
+  await store.close();
 
   // Output
   process.stdout.write(`Prefix  ${prefix}\n`);
@@ -414,23 +455,32 @@ async function cmdInteract(flags: Record<string, string[]>): Promise<void> {
     process.exit(1);
   }
 
-  const store = loadStore(name);
-  const prefix = store.getPrefix(alias);
+  const store = await openStore(name);
+  const prefix = await store.getPrefix(alias);
   if (!prefix) {
     process.stderr.write(`Error: alias "${alias}" not found\n`);
+    await store.close();
     process.exit(1);
   }
 
-  const kever = store.getKever(prefix);
+  const kever = await rebuildKever(store, prefix);
   if (!kever) {
     process.stderr.write(`Error: no key state for prefix "${prefix}"\n`);
+    await store.close();
     process.exit(1);
   }
 
-  const identity = store.getIdentity(prefix);
+  const identity = await store.getSigners(prefix);
   if (!identity) {
     process.stderr.write(`Error: no identity data for prefix "${prefix}"\n`);
+    await store.close();
     process.exit(1);
+  }
+
+  // Check establishment-only
+  if (kever.configTraits.includes(TraitDex.EstOnly)) {
+    await store.close();
+    throw new Error('Establishment-only identifier: interaction events not allowed');
   }
 
   // Parse data if provided
@@ -440,6 +490,7 @@ async function cmdInteract(flags: Record<string, string[]>): Promise<void> {
     try {
       data = JSON.parse(dataStr);
     } catch {
+      await store.close();
       process.stderr.write('Error: --data must be valid JSON\n');
       process.exit(1);
     }
@@ -448,9 +499,9 @@ async function cmdInteract(flags: Record<string, string[]>): Promise<void> {
   const newSn = kever.sn + 1;
 
   // For interaction events, the prior digest is the SAID of the last event
-  const events = store.getEvents(prefix);
+  const events = await store.getEvents(prefix);
   const lastEvent = events[events.length - 1];
-  const priorDigest = lastEvent.serder.said;
+  const priorDigest = lastEvent.said;
 
   const serder = interact({
     prefix,
@@ -460,7 +511,7 @@ async function cmdInteract(flags: Record<string, string[]>): Promise<void> {
   });
 
   // Sign with current keys
-  const currentSigners = identity.currentSignerQb64s.map(
+  const currentSigners = identity.currentQb64s.map(
     qb64 => new Signer({ qb64 }),
   );
 
@@ -472,15 +523,17 @@ async function cmdInteract(flags: Record<string, string[]>): Promise<void> {
 
   const sigQb64s = sigers.map(s => s.qb64);
 
-  store.appendEvent(prefix, serder, sigQb64s);
+  const rawJson = new TextDecoder().decode(serder.raw);
+  await store.putEvent(prefix, serder.sn, serder.said, rawJson, sigQb64s);
   const newKever = kever.applyInteraction(serder);
-  store.putKever(prefix, newKever);
-  saveStore(name, store);
+  await store.putKeyState(prefix, serializeKever(newKever));
 
   // Submit to witnesses if --receipt-endpoint
   if (hasFlag(flags, 'receipt-endpoint') && kever.witnesses.length > 0) {
     await submitToWitnesses(store, kever.witnesses, serder, sigQb64s);
   }
+
+  await store.close();
 
   // Output
   const currentKeys = currentSigners.map(s => s.verfer.qb64);
@@ -499,16 +552,18 @@ async function cmdStatus(flags: Record<string, string[]>): Promise<void> {
     process.exit(1);
   }
 
-  const store = loadStore(name);
-  const prefix = store.getPrefix(alias);
+  const store = await openStore(name);
+  const prefix = await store.getPrefix(alias);
   if (!prefix) {
     process.stderr.write(`Error: alias "${alias}" not found\n`);
+    await store.close();
     process.exit(1);
   }
 
-  const kever = store.getKever(prefix);
+  const kever = await rebuildKever(store, prefix);
   if (!kever) {
     process.stderr.write(`Error: no key state for prefix "${prefix}"\n`);
+    await store.close();
     process.exit(1);
   }
 
@@ -538,12 +593,15 @@ async function cmdStatus(flags: Record<string, string[]>): Promise<void> {
 
   if (verbose) {
     // Print each event as pretty-printed JSON
-    const events = store.getEvents(prefix);
+    const events = await store.getEvents(prefix);
     process.stdout.write(`\n`);
     for (const e of events) {
-      process.stdout.write(JSON.stringify(e.serder.ked, null, 2) + '\n');
+      const ked = JSON.parse(e.raw);
+      process.stdout.write(JSON.stringify(ked, null, 2) + '\n');
     }
   }
+
+  await store.close();
 }
 
 async function cmdSign(flags: Record<string, string[]>): Promise<void> {
@@ -555,21 +613,25 @@ async function cmdSign(flags: Record<string, string[]>): Promise<void> {
     process.exit(1);
   }
 
-  const store = loadStore(name);
-  const prefix = store.getPrefix(alias);
+  const store = await openStore(name);
+  const prefix = await store.getPrefix(alias);
   if (!prefix) {
     process.stderr.write(`Error: alias "${alias}" not found\n`);
+    await store.close();
     process.exit(1);
   }
 
-  const identity = store.getIdentity(prefix);
+  const identity = await store.getSigners(prefix);
   if (!identity) {
     process.stderr.write(`Error: no identity data for prefix "${prefix}"\n`);
+    await store.close();
     process.exit(1);
   }
 
+  await store.close();
+
   const ser = new TextEncoder().encode(text);
-  const currentSigners = identity.currentSignerQb64s.map(
+  const currentSigners = identity.currentQb64s.map(
     qb64 => new Signer({ qb64 }),
   );
 
@@ -590,8 +652,9 @@ async function cmdVerify(flags: Record<string, string[]>): Promise<void> {
     process.exit(1);
   }
 
-  const store = loadStore(name);
-  const kever = store.getKever(prefix);
+  const store = await openStore(name);
+  const kever = await rebuildKever(store, prefix);
+  await store.close();
   if (!kever) {
     process.stderr.write(`Error: no key state for prefix "${prefix}"\n`);
     process.exit(1);
@@ -633,10 +696,11 @@ async function cmdList(flags: Record<string, string[]>): Promise<void> {
     process.exit(1);
   }
 
-  const store = loadStore(name);
-  const aliases = store.listAliases();
+  const store = await openStore(name);
+  const aliases = await store.listAliases();
+  await store.close();
 
-  for (const { name: aliasName, prefix } of aliases) {
+  for (const { alias: aliasName, prefix } of aliases) {
     process.stdout.write(`${aliasName} (${prefix})\n`);
   }
 }
@@ -649,19 +713,21 @@ async function cmdExport(flags: Record<string, string[]>): Promise<void> {
     process.exit(1);
   }
 
-  const store = loadStore(name);
-  const prefix = store.getPrefix(alias);
+  const store = await openStore(name);
+  const prefix = await store.getPrefix(alias);
   if (!prefix) {
     process.stderr.write(`Error: alias "${alias}" not found\n`);
+    await store.close();
     process.exit(1);
   }
 
-  const events = store.getEvents(prefix);
+  const events = await store.getEvents(prefix);
+  await store.close();
 
   // Output each event's raw JSON bytes + signature attachment group
-  for (const { serder, sigs } of events) {
+  for (const { raw, sigs } of events) {
     // Write raw event bytes
-    process.stdout.write(new TextDecoder().decode(serder.raw));
+    process.stdout.write(raw);
 
     // Write signature attachment: -A<count_b64><sig1><sig2>...
     const countB64 = b64Index(Math.floor(sigs.length / 64)) + b64Index(sigs.length % 64);
@@ -680,14 +746,17 @@ async function cmdEvent(flags: Record<string, string[]>): Promise<void> {
     process.exit(1);
   }
 
-  const store = loadStore(name);
-  const prefix = store.getPrefix(alias);
+  const store = await openStore(name);
+  const prefix = await store.getPrefix(alias);
   if (!prefix) {
     process.stderr.write(`Error: alias "${alias}" not found\n`);
+    await store.close();
     process.exit(1);
   }
 
-  const events = store.getEvents(prefix);
+  const events = await store.getEvents(prefix);
+  await store.close();
+
   if (events.length === 0) {
     process.stderr.write(`Error: no events for alias "${alias}"\n`);
     process.exit(1);
@@ -695,7 +764,7 @@ async function cmdEvent(flags: Record<string, string[]>): Promise<void> {
 
   // Get the last event
   const lastEvent = events[events.length - 1];
-  const serder = lastEvent.serder;
+  const serder = Serder.fromRaw(new TextEncoder().encode(lastEvent.raw));
 
   if (hasFlag(flags, 'said')) {
     process.stdout.write(`${serder.said}\n`);
@@ -728,11 +797,12 @@ async function cmdImport(flags: Record<string, string[]>): Promise<void> {
     process.exit(1);
   }
 
-  const store = loadStore(name);
+  const store = await openStore(name);
   const data = readFileSync(file);
   const messages = parseStream(new Uint8Array(data));
 
   if (messages.length === 0) {
+    await store.close();
     process.stderr.write('Error: no messages found in CESR stream\n');
     process.exit(1);
   }
@@ -744,10 +814,12 @@ async function cmdImport(flags: Record<string, string[]>): Promise<void> {
     const prefix = serder.pre;
     const ilk = serder.ilk;
     const sigQb64s = msg.sigers.map(s => s.qb64);
+    const rawJson = new TextDecoder().decode(serder.raw);
 
     if (ilk === 'icp' || ilk === 'dip') {
       // Inception event -- create a new Kever
       if (serder.sn !== 0) {
+        await store.close();
         throw new Error(`Inception event must have sn=0, got sn=${serder.sn}`);
       }
       // Verify signatures against keys declared in the inception event
@@ -759,21 +831,21 @@ async function cmdImport(flags: Record<string, string[]>): Promise<void> {
           serder.ked['kt'] as string,
         );
         if (!sigResult.verified) {
+          await store.close();
           throw new Error(`Signature verification failed for ${ilk}: ${sigResult.reason}`);
         }
       }
       const kever = Kever.fromInception(serder);
-      store.appendEvent(prefix, serder, sigQb64s);
-      store.putKever(prefix, kever);
+      await store.putEvent(prefix, serder.sn, serder.said, rawJson, sigQb64s);
+      await store.putKeyState(prefix, serializeKever(kever));
     } else if (ilk === 'rot' || ilk === 'drt') {
       // Establishment event -- apply to existing Kever
-      const kever = store.getKever(prefix);
+      const kever = await rebuildKever(store, prefix);
       if (!kever) {
-        throw new Error(`No key state for prefix ${prefix} — cannot apply ${ilk} without prior inception`);
+        await store.close();
+        throw new Error(`No key state for prefix ${prefix} -- cannot apply ${ilk} without prior inception`);
       }
       // Verify signatures against keys declared in the rotation event itself.
-      // Rotation events are signed by the pre-committed next keys (now current),
-      // which are listed in serder.ked['k'], not the prior Kever's currentKeys.
       if (msg.sigers.length > 0) {
         const sigResult = await verifySignatures(
           serder.raw,
@@ -782,17 +854,19 @@ async function cmdImport(flags: Record<string, string[]>): Promise<void> {
           serder.ked['kt'] as string,
         );
         if (!sigResult.verified) {
+          await store.close();
           throw new Error(`Signature verification failed for ${ilk}: ${sigResult.reason}`);
         }
       }
       const newKever = kever.applyEstablishment(serder);
-      store.appendEvent(prefix, serder, sigQb64s);
-      store.putKever(prefix, newKever);
+      await store.putEvent(prefix, serder.sn, serder.said, rawJson, sigQb64s);
+      await store.putKeyState(prefix, serializeKever(newKever));
     } else if (ilk === 'ixn') {
       // Interaction event -- apply to existing Kever
-      const kever = store.getKever(prefix);
+      const kever = await rebuildKever(store, prefix);
       if (!kever) {
-        throw new Error(`No key state for prefix ${prefix} — cannot apply ixn without prior inception`);
+        await store.close();
+        throw new Error(`No key state for prefix ${prefix} -- cannot apply ixn without prior inception`);
       }
       // Verify signatures against current key state
       if (msg.sigers.length > 0) {
@@ -803,21 +877,22 @@ async function cmdImport(flags: Record<string, string[]>): Promise<void> {
           kever.signingThreshold,
         );
         if (!sigResult.verified) {
+          await store.close();
           throw new Error(`Signature verification failed for ${ilk}: ${sigResult.reason}`);
         }
       }
       const newKever = kever.applyInteraction(serder);
-      store.appendEvent(prefix, serder, sigQb64s);
-      store.putKever(prefix, newKever);
+      await store.putEvent(prefix, serder.sn, serder.said, rawJson, sigQb64s);
+      await store.putKeyState(prefix, serializeKever(newKever));
     } else {
       // Unknown event type -- store it but don't update key state
-      store.appendEvent(prefix, serder, sigQb64s);
+      await store.putEvent(prefix, serder.sn, serder.said, rawJson, sigQb64s);
     }
 
     importedCount++;
   }
 
-  saveStore(name, store);
+  await store.close();
 
   process.stdout.write(`Imported ${importedCount} events from ${file}\n`);
 }
@@ -831,22 +906,25 @@ async function cmdVcRegistryIncept(flags: Record<string, string[]>): Promise<voi
     process.exit(1);
   }
 
-  const store = loadStore(name);
-  const prefix = store.getPrefix(alias);
+  const store = await openStore(name);
+  const prefix = await store.getPrefix(alias);
   if (!prefix) {
     process.stderr.write(`Error: alias "${alias}" not found\n`);
+    await store.close();
     process.exit(1);
   }
 
-  const kever = store.getKever(prefix);
+  const kever = await rebuildKever(store, prefix);
   if (!kever) {
     process.stderr.write(`Error: no key state for prefix "${prefix}"\n`);
+    await store.close();
     process.exit(1);
   }
 
-  const identity = store.getIdentity(prefix);
+  const identity = await store.getSigners(prefix);
   if (!identity) {
     process.stderr.write(`Error: no identity data for prefix "${prefix}"\n`);
+    await store.close();
     process.exit(1);
   }
 
@@ -855,17 +933,18 @@ async function cmdVcRegistryIncept(flags: Record<string, string[]>): Promise<voi
   const regSaid = regSerder.said;
 
   // Store the registry
-  store.putRegistry(registryName, {
+  await store.putRegistry(registryName, {
     said: regSaid,
     name: registryName,
-    events: [regSaid],
+    lastSaid: regSaid,
+    lastSn: 0,
   });
 
   // Create an interaction event anchoring the registry seal
   const newSn = kever.sn + 1;
-  const events = store.getEvents(prefix);
+  const events = await store.getEvents(prefix);
   const lastEvent = events[events.length - 1];
-  const priorDigest = lastEvent.serder.said;
+  const priorDigest = lastEvent.said;
 
   const ixnSerder = interact({
     prefix,
@@ -875,7 +954,7 @@ async function cmdVcRegistryIncept(flags: Record<string, string[]>): Promise<voi
   });
 
   // Sign with current keys
-  const currentSigners = identity.currentSignerQb64s.map(
+  const currentSigners = identity.currentQb64s.map(
     qb64 => new Signer({ qb64 }),
   );
 
@@ -887,10 +966,11 @@ async function cmdVcRegistryIncept(flags: Record<string, string[]>): Promise<voi
 
   const sigQb64s = sigers.map(s => s.qb64);
 
-  store.appendEvent(prefix, ixnSerder, sigQb64s);
+  const rawJson = new TextDecoder().decode(ixnSerder.raw);
+  await store.putEvent(prefix, ixnSerder.sn, ixnSerder.said, rawJson, sigQb64s);
   const newKever = kever.applyInteraction(ixnSerder);
-  store.putKever(prefix, newKever);
-  saveStore(name, store);
+  await store.putKeyState(prefix, serializeKever(newKever));
+  await store.close();
 
   process.stdout.write(`Registry SAID: ${regSaid}\n`);
 }
@@ -906,28 +986,32 @@ async function cmdVcCreate(flags: Record<string, string[]>): Promise<void> {
     process.exit(1);
   }
 
-  const store = loadStore(name);
-  const prefix = store.getPrefix(alias);
+  const store = await openStore(name);
+  const prefix = await store.getPrefix(alias);
   if (!prefix) {
     process.stderr.write(`Error: alias "${alias}" not found\n`);
+    await store.close();
     process.exit(1);
   }
 
-  const kever = store.getKever(prefix);
+  const kever = await rebuildKever(store, prefix);
   if (!kever) {
     process.stderr.write(`Error: no key state for prefix "${prefix}"\n`);
+    await store.close();
     process.exit(1);
   }
 
-  const identity = store.getIdentity(prefix);
+  const identity = await store.getSigners(prefix);
   if (!identity) {
     process.stderr.write(`Error: no identity data for prefix "${prefix}"\n`);
+    await store.close();
     process.exit(1);
   }
 
-  const registry = store.getRegistry(registryName);
+  const registry = await store.getRegistry(registryName);
   if (!registry) {
     process.stderr.write(`Error: registry "${registryName}" not found\n`);
+    await store.close();
     process.exit(1);
   }
 
@@ -936,6 +1020,7 @@ async function cmdVcCreate(flags: Record<string, string[]>): Promise<void> {
   if (dataFlag.startsWith('@')) {
     const filePath = dataFlag.slice(1);
     if (!existsSync(filePath)) {
+      await store.close();
       process.stderr.write(`Error: data file not found: ${filePath}\n`);
       process.exit(1);
     }
@@ -953,7 +1038,6 @@ async function cmdVcCreate(flags: Record<string, string[]>): Promise<void> {
     a: data,
   };
   const acdc = Saider.saidify(acdcTemplate);
-  const credSaid = acdc['d'] as string;
 
   // Compute the ACDC raw size for the version string
   const acdcRaw = JSON.stringify(acdc);
@@ -966,22 +1050,25 @@ async function cmdVcCreate(flags: Record<string, string[]>): Promise<void> {
   const finalAcdcRaw = JSON.stringify(finalAcdc);
 
   // Create TEL update event for issuance
-  const lastTelEventSaid = registry.events[registry.events.length - 1];
-  const telSn = registry.events.length;
+  const telSn = registry.lastSn + 1;
   const telSerder = createUpdate({
     registrySaid: registry.said,
     credentialSaid: finalCredSaid,
-    priorSaid: lastTelEventSaid,
+    priorSaid: registry.lastSaid,
     sn: telSn,
     targetState: 'Issued',
   });
 
-  // Update registry events
-  registry.events.push(telSerder.said);
-  store.putRegistry(registryName, registry);
+  // Update registry
+  await store.putRegistry(registryName, {
+    said: registry.said,
+    name: registryName,
+    lastSaid: telSerder.said,
+    lastSn: telSn,
+  });
 
   // Store the credential
-  store.putCredential(finalCredSaid, {
+  await store.putCredential(finalCredSaid, {
     said: finalCredSaid,
     registrySaid: registry.said,
     state: 'Issued',
@@ -990,9 +1077,9 @@ async function cmdVcCreate(flags: Record<string, string[]>): Promise<void> {
 
   // Create an interaction event anchoring the TEL update seal
   const newSn = kever.sn + 1;
-  const events = store.getEvents(prefix);
+  const events = await store.getEvents(prefix);
   const lastEvent = events[events.length - 1];
-  const priorDigest = lastEvent.serder.said;
+  const priorDigest = lastEvent.said;
 
   const ixnSerder = interact({
     prefix,
@@ -1002,7 +1089,7 @@ async function cmdVcCreate(flags: Record<string, string[]>): Promise<void> {
   });
 
   // Sign with current keys
-  const currentSigners = identity.currentSignerQb64s.map(
+  const currentSigners = identity.currentQb64s.map(
     qb64 => new Signer({ qb64 }),
   );
 
@@ -1014,10 +1101,11 @@ async function cmdVcCreate(flags: Record<string, string[]>): Promise<void> {
 
   const sigQb64s = sigers.map(s => s.qb64);
 
-  store.appendEvent(prefix, ixnSerder, sigQb64s);
+  const rawJson = new TextDecoder().decode(ixnSerder.raw);
+  await store.putEvent(prefix, ixnSerder.sn, ixnSerder.said, rawJson, sigQb64s);
   const newKever = kever.applyInteraction(ixnSerder);
-  store.putKever(prefix, newKever);
-  saveStore(name, store);
+  await store.putKeyState(prefix, serializeKever(newKever));
+  await store.close();
 
   process.stdout.write(`Credential SAID: ${finalCredSaid}\n`);
 }
@@ -1030,25 +1118,19 @@ async function cmdVcList(flags: Record<string, string[]>): Promise<void> {
     process.exit(1);
   }
 
-  const store = loadStore(name);
-  const prefix = store.getPrefix(alias);
+  const store = await openStore(name);
+  const prefix = await store.getPrefix(alias);
   if (!prefix) {
     process.stderr.write(`Error: alias "${alias}" not found\n`);
+    await store.close();
     process.exit(1);
   }
 
-  const credentials = store.listCredentials();
-  // Filter to credentials issued by this alias (issuer prefix matches)
-  const mine = credentials.filter(c => {
-    try {
-      const parsed = JSON.parse(c.raw);
-      return parsed['i'] === prefix;
-    } catch {
-      return false;
-    }
-  });
+  const credentials = await store.listCredentials();
+  await store.close();
 
-  for (const cred of mine) {
+  // listCredentials returns { said, state } summaries -- output them
+  for (const cred of credentials) {
     process.stdout.write(`${cred.said} ${cred.state}\n`);
   }
 }
@@ -1062,7 +1144,7 @@ async function cmdOobiResolve(flags: Record<string, string[]>): Promise<void> {
     process.exit(1);
   }
 
-  const store = loadStore(name);
+  const store = await openStore(name);
 
   // Fetch the OOBI URL (GET request)
   const oobiUrl = new URL(oobi);
@@ -1081,6 +1163,7 @@ async function cmdOobiResolve(flags: Record<string, string[]>): Promise<void> {
   });
 
   if (response.statusCode !== 200) {
+    await store.close();
     process.stderr.write(`Error: OOBI fetch returned status ${response.statusCode}\n`);
     process.exit(1);
   }
@@ -1090,12 +1173,14 @@ async function cmdOobiResolve(flags: Record<string, string[]>): Promise<void> {
   try {
     ked = JSON.parse(response.body);
   } catch {
+    await store.close();
     process.stderr.write('Error: OOBI response is not valid JSON\n');
     process.exit(1);
   }
 
   const witPrefix = (ked['i'] as string) ?? '';
   if (!witPrefix) {
+    await store.close();
     process.stderr.write('Error: OOBI event has no prefix (i field)\n');
     process.exit(1);
   }
@@ -1103,19 +1188,20 @@ async function cmdOobiResolve(flags: Record<string, string[]>): Promise<void> {
   // Store the witness inception event so we know the AID
   const witSerder = Serder.fromKed(ked);
   const witKever = Kever.fromInception(witSerder);
-  store.appendEvent(witPrefix, witSerder, []);
-  store.putKever(witPrefix, witKever);
+  const witRawJson = new TextDecoder().decode(witSerder.raw);
+  await store.putEvent(witPrefix, witSerder.sn, witSerder.said, witRawJson, []);
+  await store.putKeyState(witPrefix, serializeKever(witKever));
 
-  // Store the endpoint mapping: AID → base URL (scheme + host + port)
+  // Store the endpoint mapping: AID -> base URL (scheme + host + port)
   const baseUrl = `${oobiUrl.protocol}//${oobiUrl.host}`;
-  store.putEndpoint(witPrefix, baseUrl);
+  await store.putEndpoint(witPrefix, baseUrl);
 
   // Store alias mapping if provided
   if (oobiAlias) {
-    store.setAlias(oobiAlias, witPrefix);
+    await store.putAlias(oobiAlias, witPrefix);
   }
 
-  saveStore(name, store);
+  await store.close();
 
   process.stdout.write(`Resolved: ${witPrefix}\n`);
   process.stdout.write(`Endpoint: ${baseUrl}\n`);
@@ -1133,23 +1219,25 @@ async function cmdOobiGenerate(flags: Record<string, string[]>): Promise<void> {
     process.exit(1);
   }
 
-  const store = loadStore(name);
-  const prefix = store.getPrefix(alias);
+  const store = await openStore(name);
+  const prefix = await store.getPrefix(alias);
   if (!prefix) {
     process.stderr.write(`Error: alias "${alias}" not found\n`);
+    await store.close();
     process.exit(1);
   }
 
-  const kever = store.getKever(prefix);
+  const kever = await rebuildKever(store, prefix);
   if (!kever) {
     process.stderr.write(`Error: no key state for prefix "${prefix}"\n`);
+    await store.close();
     process.exit(1);
   }
 
   if (role === 'witness') {
     // For each witness, look up its stored URL and output the OOBI URL
     for (const witAid of kever.witnesses) {
-      const baseUrl = store.getEndpoint(witAid);
+      const baseUrl = await store.getEndpoint(witAid);
       if (baseUrl) {
         process.stdout.write(`${baseUrl}/oobi/${prefix}/witness\n`);
       } else {
@@ -1157,9 +1245,12 @@ async function cmdOobiGenerate(flags: Record<string, string[]>): Promise<void> {
       }
     }
   } else {
+    await store.close();
     process.stderr.write(`Error: unsupported role "${role}"\n`);
     process.exit(1);
   }
+
+  await store.close();
 }
 
 async function cmdWitnessStart(flags: Record<string, string[]>): Promise<void> {
@@ -1170,9 +1261,10 @@ async function cmdWitnessStart(flags: Record<string, string[]>): Promise<void> {
 
   mkdirSync(dbPath, { recursive: true });
 
-  const { NedbStore, KerizonWitness } = await import('@kerizon/witness');
+  const { KerizonWitness } = await import('@kerizon/witness');
+  const { NedbPersistence: WitnessNedb } = await import('@kerizon/store-nedb');
   const { createHttpServer, createTcpServer } = await import('@kerizon/witness-node');
-  const store = new NedbStore(dbPath);
+  const store = await WitnessNedb.create(dbPath);
   const witness = await KerizonWitness.create({ name, httpPort, tcpPort, dbPath }, store);
   const handler = witness.createHandler();
 
@@ -1198,13 +1290,14 @@ async function cmdWitnessDemo(flags: Record<string, string[]>): Promise<void> {
     { name: 'wes', httpPort: 5644, tcpPort: 5634 },
   ];
 
-  const { NedbStore, KerizonWitness } = await import('@kerizon/witness');
+  const { KerizonWitness } = await import('@kerizon/witness');
+  const { NedbPersistence: WitnessNedb } = await import('@kerizon/store-nedb');
   const { createHttpServer, createTcpServer } = await import('@kerizon/witness-node');
 
   for (const w of witnesses) {
     const dbPath = join(homedir(), '.kerizon-witness', w.name);
     mkdirSync(dbPath, { recursive: true });
-    const store = new NedbStore(dbPath);
+    const store = await WitnessNedb.create(dbPath);
     const witness = await KerizonWitness.create({ ...w, dbPath }, store);
     const handler = witness.createHandler();
 

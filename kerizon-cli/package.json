@@ -13,6 +13,7 @@
   "dependencies": {
     "@kerizon/cesr": "file:../cesr",
     "@kerizon/keri-core": "file:../keri-core",
+    "@kerizon/store-nedb": "file:../store-nedb",
     "@kerizon/witness": "file:../kerizon-witness",
     "@kerizon/witness-node": "file:../kerizon-witness-node"
   },

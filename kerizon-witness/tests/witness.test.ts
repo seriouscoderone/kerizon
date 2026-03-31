@@ -3,9 +3,9 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { Signer, Siger, Serder, CtrDex_1_0, b64Index } from '@kerizon/cesr';
-import { incept } from '@kerizon/keri-core';
+import { incept, MemoryPersistence, type PersistencePort } from '@kerizon/keri-core';
 import { KerizonWitness } from '../src/witness.js';
-import { NedbStore } from '../src/store/nedb-store.js';
+import { NedbPersistence } from '@kerizon/store-nedb';
 
 /** Encode a short counter: code + 2-char B64 count. */
 function encodeCounter(code: string, count: number): string {
@@ -24,17 +24,14 @@ function buildCesr(serder: Serder, sigers: Siger[]): Uint8Array {
 }
 
 describe('KerizonWitness', () => {
-  let dbDir: string;
-  let store: NedbStore;
+  let store: PersistencePort;
 
-  beforeEach(async () => {
-    dbDir = await mkdtemp(join(tmpdir(), 'witness-test-'));
-    store = new NedbStore(dbDir);
+  beforeEach(() => {
+    store = new MemoryPersistence();
   });
 
   afterEach(async () => {
     await store.close();
-    await rm(dbDir, { recursive: true, force: true });
   });
 
   it('create() produces a witness with a B-prefix (non-transferable)', async () => {
@@ -46,23 +43,6 @@ describe('KerizonWitness', () => {
     expect(witness.prefix.length).toBe(44);
     // Non-transferable Ed25519 basic prefix starts with 'B'
     expect(witness.prefix[0]).toBe('B');
-  });
-
-  it('prefix persists across restarts (same store)', async () => {
-    const witness1 = await KerizonWitness.create(
-      { name: 'wit0', httpPort: 5632, tcpPort: 5633 },
-      store,
-    );
-    const prefix1 = witness1.prefix;
-
-    // Create a second witness using the same store directory
-    const store2 = new NedbStore(dbDir);
-    const witness2 = await KerizonWitness.create(
-      { name: 'wit0', httpPort: 5632, tcpPort: 5633 },
-      store2,
-    );
-    expect(witness2.prefix).toBe(prefix1);
-    await store2.close();
   });
 
   it('processEvent accepts a valid inception and returns receipt', async () => {
@@ -139,7 +119,7 @@ describe('KerizonWitness', () => {
     const parsed = JSON.parse(jsonPart);
     expect(parsed.t).toBe('icp');
     expect(parsed.i).toBe(witness.prefix);
-    // For basic prefix: i is the B-code verfer, d is the SAID — they differ
+    // For basic prefix: i is the B-code verfer, d is the SAID -- they differ
     expect(parsed.i[0]).toBe('B');
     expect(parsed.d[0]).toBe('E');
     expect(parsed.i).not.toBe(parsed.d);
@@ -247,5 +227,36 @@ describe('KerizonWitness', () => {
     const garbage = new TextEncoder().encode('not valid cesr at all');
     const result = await witness.processEvent(garbage);
     expect('error' in result).toBe(true);
+  });
+});
+
+describe('KerizonWitness (NeDB persistence restart)', () => {
+  let dbDir: string;
+
+  beforeEach(async () => {
+    dbDir = await mkdtemp(join(tmpdir(), 'witness-test-'));
+  });
+
+  afterEach(async () => {
+    await rm(dbDir, { recursive: true, force: true });
+  });
+
+  it('prefix persists across restarts (same store directory)', async () => {
+    const store1 = await NedbPersistence.create(dbDir);
+    const witness1 = await KerizonWitness.create(
+      { name: 'wit0', httpPort: 5632, tcpPort: 5633 },
+      store1,
+    );
+    const prefix1 = witness1.prefix;
+    await store1.close();
+
+    // Create a second witness using the same store directory
+    const store2 = await NedbPersistence.create(dbDir);
+    const witness2 = await KerizonWitness.create(
+      { name: 'wit0', httpPort: 5632, tcpPort: 5633 },
+      store2,
+    );
+    expect(witness2.prefix).toBe(prefix1);
+    await store2.close();
   });
 });
